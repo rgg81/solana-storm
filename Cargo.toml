@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "bins/*"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+publish = false
+authors = ["rgg81"]
+repository = "https://github.com/rgg81/solana-storm"
+
+[workspace.dependencies]
+storm-core = { path = "crates/storm-core" }
+storm-solana = { path = "crates/storm-solana" }
+
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+thiserror = "1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+config = { version = "0.14", default-features = false, features = ["toml"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+solana-client = "2"
+solana-sdk = "2"
+
+# Pulled in transitively by solana-client; we list it here only to enable
+# `rustls-tls-native-roots` so the binary trusts the OS CA bundle (corporate
+# TLS-inspecting proxies, custom dev CAs, etc.) in addition to webpki-roots.
+# Cargo feature unification flips the feature on for the whole build.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"

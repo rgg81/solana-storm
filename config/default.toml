@@ -1,0 +1,7 @@
+[solana]
+# Free public mainnet endpoint (rate-limited; fine for learning).
+# Override at runtime via SOLANA_RPC_URL / SOLANA_WS_URL env vars,
+# e.g. to use Helius set SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY.
+rpc_url    = "https://api.mainnet-beta.solana.com"
+ws_url     = "wss://api.mainnet-beta.solana.com"
+commitment = "confirmed"
