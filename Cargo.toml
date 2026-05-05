@@ -25,6 +25,12 @@ clap = { version = "4", features = ["derive"] }
 solana-client = "2"
 solana-sdk = "2"
 
+# Pulled in transitively by solana-client; we list it here only to enable
+# `rustls-tls-native-roots` so the binary trusts the OS CA bundle (corporate
+# TLS-inspecting proxies, custom dev CAs, etc.) in addition to webpki-roots.
+# Cargo feature unification flips the feature on for the whole build.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

@@ -1642,6 +1642,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rustls 0.23.40",
+ "rustls-native-certs",
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
@@ -2776,6 +2777,7 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls 0.23.40",
+ "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -5256,6 +5258,7 @@ dependencies = [
 name = "storm-solana"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
  "solana-client",
  "solana-sdk",
  "storm-core",
