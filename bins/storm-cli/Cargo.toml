@@ -11,6 +11,7 @@ repository.workspace = true
 storm-core.workspace = true
 storm-solana.workspace = true
 
+solana-sdk.workspace = true
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true

@@ -11,3 +11,5 @@ repository.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 config.workspace = true
+solana-sdk.workspace = true
+rust_decimal.workspace = true

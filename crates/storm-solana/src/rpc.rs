@@ -9,6 +9,16 @@ pub struct RpcContext {
     commitment: CommitmentConfig,
 }
 
+impl RpcContext {
+    pub fn rpc(&self) -> &RpcClient {
+        &self.client
+    }
+
+    pub fn commitment(&self) -> CommitmentConfig {
+        self.commitment
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AccountSnapshot {
     pub address: Pubkey,
