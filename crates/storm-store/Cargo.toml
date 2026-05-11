@@ -1,5 +1,5 @@
 [package]
-name = "storm-cli"
+name = "storm-store"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,13 +9,10 @@ repository.workspace = true
 
 [dependencies]
 storm-core.workspace = true
-storm-solana.workspace = true
-storm-store.workspace = true
-
+sqlx.workspace = true
+tokio.workspace = true
 rust_decimal.workspace = true
 solana-sdk.workspace = true
-tokio.workspace = true
-clap.workspace = true
-anyhow.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

@@ -12,6 +12,7 @@ repository = "https://github.com/rgg81/solana-storm"
 [workspace.dependencies]
 storm-core = { path = "crates/storm-core" }
 storm-solana = { path = "crates/storm-solana" }
+storm-store = { path = "crates/storm-store" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 thiserror = "1"
@@ -28,6 +29,8 @@ spl-token = "8"
 rust_decimal = "1"
 
 proptest = "1"
+
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"] }
 
 # Pulled in transitively by solana-client; we list it here only to enable
 # `rustls-tls-native-roots` so the binary trusts the OS CA bundle (corporate
