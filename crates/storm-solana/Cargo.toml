@@ -12,6 +12,7 @@ storm-core.workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true
 spl-token.workspace = true
+rust_decimal.workspace = true
 # Listed only to layer the `rustls-tls-native-roots` feature onto the reqwest
 # instance solana-client builds. See the comment in the workspace Cargo.toml.
 reqwest.workspace = true
