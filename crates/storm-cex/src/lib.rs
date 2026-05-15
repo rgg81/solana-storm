@@ -4,7 +4,7 @@ pub mod ws;
 
 pub use feed::{BinanceFeed, FeedConfig, DEFAULT_FUTURES_WS, DEFAULT_SPOT_WS};
 pub use types::{normalize_symbol, CexEvent, FundingTick, PriceTick, Source};
-pub use ws::{next_backoff, parse_book_ticker, parse_mark_price, run_stream, StreamKind};
+pub use ws::{parse_book_ticker, parse_mark_price, run_stream, StreamKind};
 
 /// Install the process-wide rustls crypto provider.
 ///

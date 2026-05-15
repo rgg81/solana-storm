@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
@@ -11,17 +11,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::types::{normalize_symbol, CexEvent, FundingTick, PriceTick, Source};
+use storm_core::backoff::{next_backoff, INITIAL_BACKOFF};
 use storm_core::{Result, StormError};
-
-/// Initial reconnect delay; doubles up to [`MAX_BACKOFF`] on each failure.
-pub const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
-/// Reconnect delay ceiling.
-pub const MAX_BACKOFF: Duration = Duration::from_secs(60);
-
-/// Next exponential-backoff delay, capped at [`MAX_BACKOFF`].
-pub fn next_backoff(current: Duration) -> Duration {
-    (current * 2).min(MAX_BACKOFF)
-}
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -182,21 +173,6 @@ async fn pump(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn backoff_doubles_and_caps() {
-        let mut b = INITIAL_BACKOFF;
-        assert_eq!(b, Duration::from_secs(1));
-        b = next_backoff(b);
-        assert_eq!(b, Duration::from_secs(2));
-        b = next_backoff(b);
-        assert_eq!(b, Duration::from_secs(4));
-        // Run it well past the cap.
-        for _ in 0..20 {
-            b = next_backoff(b);
-        }
-        assert_eq!(b, MAX_BACKOFF);
-    }
 
     #[test]
     fn parses_real_spot_book_ticker_frame() {

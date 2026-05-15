@@ -6082,11 +6082,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-engine"
+version = "0.1.0"
+dependencies = [
+ "rust_decimal",
+ "solana-sdk",
+ "storm-cex",
+ "storm-core",
+ "storm-solana",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "storm-monitor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "rust_decimal",
+ "solana-sdk",
  "storm-cex",
+ "storm-core",
+ "storm-engine",
  "tokio",
  "tokio-util",
  "tracing",
@@ -6097,12 +6116,20 @@ dependencies = [
 name = "storm-solana"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "futures-util",
  "reqwest",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "solana-client",
  "solana-sdk",
  "spl-token",
  "storm-core",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
