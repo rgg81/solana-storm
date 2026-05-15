@@ -13,11 +13,17 @@ repository = "https://github.com/rgg81/solana-storm"
 storm-core = { path = "crates/storm-core" }
 storm-solana = { path = "crates/storm-solana" }
 storm-store = { path = "crates/storm-store" }
+storm-cex = { path = "crates/storm-cex" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = "0.7"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+rustls = "0.23"
 thiserror = "1"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 config = { version = "0.14", default-features = false, features = ["toml"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
