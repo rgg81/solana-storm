@@ -1,5 +1,5 @@
 [package]
-name = "storm-monitor"
+name = "storm-engine"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,14 +9,11 @@ repository.workspace = true
 
 [dependencies]
 storm-core.workspace = true
+storm-solana.workspace = true
 storm-cex.workspace = true
-storm-engine.workspace = true
 
 solana-sdk.workspace = true
-clap.workspace = true
-rust_decimal.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-anyhow.workspace = true
+rust_decimal.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true

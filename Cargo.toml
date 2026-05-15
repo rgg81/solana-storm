@@ -14,6 +14,7 @@ storm-core = { path = "crates/storm-core" }
 storm-solana = { path = "crates/storm-solana" }
 storm-store = { path = "crates/storm-store" }
 storm-cex = { path = "crates/storm-cex" }
+storm-engine = { path = "crates/storm-engine" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = "0.7"
@@ -33,6 +34,7 @@ solana-client = "2"
 solana-sdk = "2"
 spl-token = "8"
 rust_decimal = "1"
+base64 = "0.22"
 
 proptest = "1"
 
