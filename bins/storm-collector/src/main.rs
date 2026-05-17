@@ -21,6 +21,11 @@ mod classify;
 #[allow(dead_code)]
 mod discover;
 
+// `cycle` is called by `main` in Task 11; allow dead_code until then.
+// Removed in Task 11.
+#[allow(dead_code)]
+mod cycle;
+
 use clap::Parser;
 use storm_core::Config;
 
