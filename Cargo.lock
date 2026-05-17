@@ -6015,6 +6015,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dotenvy",
+ "serde_json",
  "solana-client",
  "solana-sdk",
  "storm-core",

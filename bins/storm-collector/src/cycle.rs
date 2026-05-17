@@ -60,31 +60,68 @@ pub async fn run_cycle(
     Ok(())
 }
 
-/// Phase 1 — discover graduations and insert any not yet tracked.
+/// `collector_state` key holding the slot the last successful discover scan
+/// reached — the `changedSinceSlot` cursor for the next scan.
+const LAST_DISCOVERY_SLOT_KEY: &str = "last_discovery_slot";
+
+/// Phase 1 — discover graduations changed since the last cycle and insert any
+/// not yet tracked.
 async fn discover_phase(rpc: &RpcContext, store: &Store, now: i64) -> Result<()> {
-    let slot = rpc
+    let current_slot = rpc
         .rpc()
         .get_slot()
         .await
         .map_err(|e| storm_core::StormError::Rpc(format!("get_slot: {e}")))?;
-    let discovered = discover_graduations(rpc).await?;
+
+    // Cold start: the first cycle ever has no cursor. Seed it with the current
+    // slot and discover nothing this cycle — backfilling history is Phase 2's
+    // job; the live collector starts fresh from here.
+    let changed_since_slot = match store.get_collector_state(LAST_DISCOVERY_SLOT_KEY).await? {
+        Some(s) => s.parse::<u64>().map_err(|e| {
+            storm_core::StormError::Parse(format!("{LAST_DISCOVERY_SLOT_KEY} '{s}': {e}"))
+        })?,
+        None => {
+            store
+                .set_collector_state(LAST_DISCOVERY_SLOT_KEY, &current_slot.to_string())
+                .await?;
+            tracing::info!(
+                slot = current_slot,
+                "discovery cold start: cursor seeded, no scan this cycle"
+            );
+            return Ok(());
+        }
+    };
+
+    let discovered = discover_graduations(rpc, changed_since_slot).await?;
     let mut new_count = 0usize;
     for grad in discovered {
         let row = GraduationRow {
             mint: grad.mint,
             pool_address: grad.pool_address,
             bonding_curve_address: grad.bonding_curve,
-            graduation_slot: slot,
+            graduation_slot: current_slot,
             detected_at: now,
             status: GraduationStatus::PendingSnapshot,
         };
         // insert_graduation is idempotent on `mint`: Some(id) = newly inserted,
-        // None = already tracked.
+        // None = already tracked (a pool that merely traded since last scan).
         if store.insert_graduation(&row).await?.is_some() {
             new_count += 1;
         }
     }
-    tracing::info!(new = new_count, "discover phase complete");
+
+    // Advance the cursor only after a fully successful scan + insert. A failed
+    // cycle leaves it unchanged, so the next cycle safely re-scans the window
+    // (the idempotent insert makes the overlap harmless).
+    store
+        .set_collector_state(LAST_DISCOVERY_SLOT_KEY, &current_slot.to_string())
+        .await?;
+    tracing::info!(
+        new = new_count,
+        changed_since_slot,
+        through_slot = current_slot,
+        "discover phase complete"
+    );
     Ok(())
 }
 
