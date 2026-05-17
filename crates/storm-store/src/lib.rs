@@ -122,6 +122,40 @@ pub struct StoredGraduation {
     pub status: GraduationStatus,
 }
 
+/// A flattened `storm_features::FeatureVector` ready for the `feature_snapshots`
+/// table. `storm-store` deliberately does not depend on `storm-features`; the
+/// collector flattens the `FeatureVector` into this plain struct.
+#[derive(Debug, Clone)]
+pub struct FeatureSnapshotRow {
+    /// FK to the `graduations` row this snapshot describes.
+    pub graduation_id: i64,
+    /// Unix seconds the snapshot was taken.
+    pub snapshot_at: i64,
+    // liquidity group
+    pub base_reserve: u64,
+    pub quote_reserve: u64,
+    pub lp_burned: bool,
+    pub pool_supply_fraction: f64,
+    // contract-flags group
+    pub mint_authority_present: bool,
+    pub freeze_authority_present: bool,
+    // holder-distribution group
+    pub visible_holder_count: i64,
+    pub top10_concentration: f64,
+    pub top20_concentration: f64,
+    pub creator_bag_fraction: f64,
+    // bonding-curve-snapshot group
+    pub curve_graduated: bool,
+    pub curve_real_sol_reserves: u64,
+    pub curve_real_token_reserves: u64,
+    pub curve_token_total_supply: u64,
+    // deployer-signal group
+    pub capped_signature_count: i64,
+    pub signature_count_capped: bool,
+    /// `None` when the deployer's oldest signature age is unknown.
+    pub oldest_signature_age_secs: Option<i64>,
+}
+
 impl Store {
     /// Open (creating if necessary) a SQLite store at `database_url`.
     /// `database_url` examples: `sqlite::memory:`, `sqlite://./storm.db`,
@@ -287,6 +321,58 @@ impl Store {
             .map_err(|e| StormError::Rpc(format!("graduation_count: {e}")))?;
         Ok(row.0)
     }
+
+    /// Persist a feature snapshot for a graduation. The caller is expected to
+    /// have checked `has_feature_snapshot` first; the `graduation_id UNIQUE`
+    /// constraint is the hard backstop against duplicates.
+    pub async fn insert_feature_snapshot(&self, row: &FeatureSnapshotRow) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO feature_snapshots \
+             (graduation_id, snapshot_at, base_reserve, quote_reserve, lp_burned, \
+              pool_supply_fraction, mint_authority_present, freeze_authority_present, \
+              visible_holder_count, top10_concentration, top20_concentration, \
+              creator_bag_fraction, curve_graduated, curve_real_sol_reserves, \
+              curve_real_token_reserves, curve_token_total_supply, capped_signature_count, \
+              signature_count_capped, oldest_signature_age_secs) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, \
+                     ?16, ?17, ?18, ?19)",
+        )
+        .bind(row.graduation_id)
+        .bind(row.snapshot_at)
+        .bind(row.base_reserve.to_string())
+        .bind(row.quote_reserve.to_string())
+        .bind(row.lp_burned as i64)
+        .bind(row.pool_supply_fraction)
+        .bind(row.mint_authority_present as i64)
+        .bind(row.freeze_authority_present as i64)
+        .bind(row.visible_holder_count)
+        .bind(row.top10_concentration)
+        .bind(row.top20_concentration)
+        .bind(row.creator_bag_fraction)
+        .bind(row.curve_graduated as i64)
+        .bind(row.curve_real_sol_reserves.to_string())
+        .bind(row.curve_real_token_reserves.to_string())
+        .bind(row.curve_token_total_supply.to_string())
+        .bind(row.capped_signature_count)
+        .bind(row.signature_count_capped as i64)
+        .bind(row.oldest_signature_age_secs)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StormError::Rpc(format!("insert feature snapshot: {e}")))?;
+        Ok(())
+    }
+
+    /// True if a feature snapshot already exists for `graduation_id` — the
+    /// collector's idempotency check before extracting features.
+    pub async fn has_feature_snapshot(&self, graduation_id: i64) -> Result<bool> {
+        let row: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM feature_snapshots WHERE graduation_id = ?1")
+                .bind(graduation_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| StormError::Rpc(format!("has_feature_snapshot: {e}")))?;
+        Ok(row.0 > 0)
+    }
 }
 
 /// Parse a base58 `Pubkey` stored as TEXT, attributing failures to `field`.
@@ -409,6 +495,84 @@ mod tests {
             .unwrap();
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].id, id);
+    }
+
+    fn sample_snapshot(graduation_id: i64) -> FeatureSnapshotRow {
+        FeatureSnapshotRow {
+            graduation_id,
+            snapshot_at: 1_779_050_000,
+            base_reserve: 200_000_000_000_000,
+            quote_reserve: 85_000_000_000,
+            lp_burned: true,
+            pool_supply_fraction: 0.2,
+            mint_authority_present: false,
+            freeze_authority_present: false,
+            visible_holder_count: 18,
+            top10_concentration: 0.31,
+            top20_concentration: 0.44,
+            creator_bag_fraction: 0.05,
+            curve_graduated: true,
+            curve_real_sol_reserves: 85_000_000_000,
+            curve_real_token_reserves: 0,
+            curve_token_total_supply: 1_000_000_000_000_000,
+            capped_signature_count: 7,
+            signature_count_capped: false,
+            oldest_signature_age_secs: Some(123_456),
+        }
+    }
+
+    #[tokio::test]
+    async fn feature_snapshot_round_trips() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        let grad = sample_graduation(Pubkey::new_unique());
+        let gid = store.insert_graduation(&grad).await.unwrap().unwrap();
+
+        // No snapshot yet.
+        assert!(!store.has_feature_snapshot(gid).await.unwrap());
+
+        let snap = sample_snapshot(gid);
+        store.insert_feature_snapshot(&snap).await.unwrap();
+
+        // Now the existence guard reports it.
+        assert!(store.has_feature_snapshot(gid).await.unwrap());
+
+        // The persisted u64 fields survive the TEXT round-trip exactly.
+        let (base, quote, supply, capped): (String, String, String, i64) = sqlx::query_as(
+            "SELECT base_reserve, quote_reserve, curve_token_total_supply, \
+                    capped_signature_count FROM feature_snapshots WHERE graduation_id = ?1",
+        )
+        .bind(gid)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(base, "200000000000000");
+        assert_eq!(quote, "85000000000");
+        assert_eq!(supply, "1000000000000000");
+        assert_eq!(capped, 7);
+    }
+
+    #[tokio::test]
+    async fn feature_snapshot_nullable_age_persists_as_null() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        let gid = store
+            .insert_graduation(&sample_graduation(Pubkey::new_unique()))
+            .await
+            .unwrap()
+            .unwrap();
+        let mut snap = sample_snapshot(gid);
+        snap.oldest_signature_age_secs = None;
+        store.insert_feature_snapshot(&snap).await.unwrap();
+        let age: (Option<i64>,) = sqlx::query_as(
+            "SELECT oldest_signature_age_secs FROM feature_snapshots WHERE graduation_id = ?1",
+        )
+        .bind(gid)
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(age.0, None);
     }
 
     #[tokio::test]
