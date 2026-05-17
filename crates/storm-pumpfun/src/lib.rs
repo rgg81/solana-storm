@@ -14,6 +14,7 @@ pub const PUMPSWAP_PROGRAM_ID: Pubkey =
     solana_sdk::pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 
 pub mod bonding_curve;
+pub mod graduation;
 pub mod pumpswap;
 
 // ---- little-endian byte readers (crate-internal) --------------------------
