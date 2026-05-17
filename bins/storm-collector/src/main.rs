@@ -4,30 +4,22 @@
 //! T0+window, and records outcomes once the outcome window matures. See
 //! `docs/superpowers/plans/2026-05-17-storm-collector.md`.
 
+mod classify;
 mod config;
-
-// `schedule`'s pure functions are reachable only once `main` calls the cycle
-// (Task 11); allow dead_code until then. The whole allow is removed in Task 11.
-#[allow(dead_code)]
+mod cycle;
+mod discover;
 mod schedule;
 
-// `classify` is reachable only once `main` calls the cycle (Task 11); allow
-// dead_code until then. Removed in Task 11.
-#[allow(dead_code)]
-mod classify;
-
-// `discover` is reachable only once `main` calls the cycle (Task 11); allow
-// dead_code until then. Removed in Task 11.
-#[allow(dead_code)]
-mod discover;
-
-// `cycle` is called by `main` in Task 11; allow dead_code until then.
-// Removed in Task 11.
-#[allow(dead_code)]
-mod cycle;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use storm_core::backoff::{next_backoff, INITIAL_BACKOFF};
 use storm_core::Config;
+use storm_solana::RpcContext;
+use storm_store::Store;
+
+use crate::config::CollectorConfig;
+use crate::cycle::run_cycle;
 
 /// storm-collector command-line arguments.
 #[derive(Parser)]
@@ -40,6 +32,19 @@ struct Cli {
     /// SQLite database URL.
     #[arg(long, default_value = "sqlite://./storm.db")]
     db: String,
+    /// Run exactly one collection cycle and exit (for cron-style scheduling /
+    /// manual checks) instead of looping forever.
+    #[arg(long)]
+    once: bool,
+}
+
+/// Current wall-clock time as Unix seconds. Isolated so the daemon's clock read
+/// is in one named place; the pure cycle logic takes the value as an argument.
+fn now_unix() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 #[tokio::main]
@@ -55,10 +60,80 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let cfg = Config::load()?;
+    let collector_cfg = CollectorConfig::from_env();
 
-    tracing::info!(db = %cli.db, rpc = %cfg.solana.rpc_url, "storm-collector starting");
+    let store = Store::open(&cli.db).await?;
+    store.migrate().await?;
+    let rpc = RpcContext::from_config(&cfg.solana);
 
-    let _collector_cfg = config::CollectorConfig::from_env();
+    tracing::info!(
+        db = %cli.db,
+        rpc = %cfg.solana.rpc_url,
+        cycle_secs = collector_cfg.cycle_interval.as_secs(),
+        once = cli.once,
+        "storm-collector starting",
+    );
 
+    if cli.once {
+        run_cycle(&rpc, &store, &collector_cfg, now_unix()).await?;
+        tracing::info!("single cycle complete; exiting (--once)");
+        return Ok(());
+    }
+
+    run_daemon(&rpc, &store, &collector_cfg).await;
     Ok(())
+}
+
+/// The forever-loop: run a cycle, sleep, repeat — until Ctrl-C. A failing cycle
+/// is logged and the next sleep uses exponential backoff; a success resets it.
+async fn run_daemon(rpc: &RpcContext, store: &Store, cfg: &CollectorConfig) {
+    let mut backoff = INITIAL_BACKOFF;
+    loop {
+        match run_cycle(rpc, store, cfg, now_unix()).await {
+            Ok(()) => {
+                backoff = INITIAL_BACKOFF; // healthy cycle — reset the backoff
+                tracing::info!("cycle complete");
+                if sleep_or_shutdown(cfg.cycle_interval).await {
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, backoff_secs = backoff.as_secs(), "cycle failed; backing off");
+                if sleep_or_shutdown(backoff).await {
+                    break;
+                }
+                backoff = next_backoff(backoff);
+            }
+        }
+    }
+    tracing::info!("storm-collector stopped");
+}
+
+/// Sleep `dur`, or wake immediately on Ctrl-C. Returns `true` if Ctrl-C fired
+/// (the daemon should stop), `false` if the sleep simply elapsed.
+async fn sleep_or_shutdown(dur: Duration) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(dur) => false,
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Ctrl-C received; shutting down");
+            true
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn now_unix_is_a_plausible_recent_timestamp() {
+        // Sanity bound: after 2025-01-01 and before 2100-01-01. Catches a clock
+        // that is wildly wrong without being flaky.
+        let now = now_unix();
+        assert!(now > 1_735_689_600, "now_unix() should be after 2025-01-01");
+        assert!(
+            now < 4_102_444_800,
+            "now_unix() should be before 2100-01-01"
+        );
+    }
 }
