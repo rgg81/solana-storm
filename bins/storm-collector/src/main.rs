@@ -4,6 +4,8 @@
 //! T0+window, and records outcomes once the outcome window matures. See
 //! `docs/superpowers/plans/2026-05-17-storm-collector.md`.
 
+mod config;
+
 use clap::Parser;
 use storm_core::Config;
 
@@ -35,6 +37,8 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Config::load()?;
 
     tracing::info!(db = %cli.db, rpc = %cfg.solana.rpc_url, "storm-collector starting");
+
+    let _collector_cfg = config::CollectorConfig::from_env();
 
     Ok(())
 }
