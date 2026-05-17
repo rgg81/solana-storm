@@ -13,6 +13,7 @@ storm-solana.workspace = true
 storm-pumpfun.workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true
+spl-token.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

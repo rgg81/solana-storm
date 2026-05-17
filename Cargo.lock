@@ -6027,6 +6027,7 @@ dependencies = [
  "solana-account-decoder-client-types",
  "solana-client",
  "solana-sdk",
+ "spl-token",
  "storm-core",
  "storm-pumpfun",
  "storm-solana",
