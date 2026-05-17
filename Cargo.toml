@@ -13,6 +13,7 @@ repository = "https://github.com/rgg81/solana-storm"
 storm-core = { path = "crates/storm-core" }
 storm-solana = { path = "crates/storm-solana" }
 storm-store = { path = "crates/storm-store" }
+storm-pumpfun = { path = "crates/storm-pumpfun" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = "0.7"

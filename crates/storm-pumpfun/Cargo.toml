@@ -1,0 +1,12 @@
+[package]
+name = "storm-pumpfun"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+storm-core.workspace = true
+solana-sdk.workspace = true

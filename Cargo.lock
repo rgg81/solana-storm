@@ -6021,6 +6021,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-pumpfun"
+version = "0.1.0"
+dependencies = [
+ "solana-sdk",
+ "storm-core",
+]
+
+[[package]]
 name = "storm-solana"
 version = "0.1.0"
 dependencies = [
