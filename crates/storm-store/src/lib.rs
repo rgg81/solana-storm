@@ -187,4 +187,24 @@ mod tests {
             .unwrap()
             .is_none());
     }
+
+    #[tokio::test]
+    async fn migration_0002_creates_survival_tables() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+        // Each new table must exist and be queryable (count of an empty table is 0).
+        for table in [
+            "graduations",
+            "feature_snapshots",
+            "outcomes",
+            "collector_state",
+        ] {
+            let count: (i64,) =
+                sqlx::query_as(&format!("SELECT COUNT(*) FROM {table}"))
+                    .fetch_one(&store.pool)
+                    .await
+                    .unwrap_or_else(|e| panic!("table {table} not queryable: {e}"));
+            assert_eq!(count.0, 0, "{table} should start empty");
+        }
+    }
 }
