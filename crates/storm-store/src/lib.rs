@@ -52,6 +52,76 @@ pub struct LatestPrice {
     pub captured_at: i64,
 }
 
+/// Lifecycle status of a tracked graduation. Drives the collector's state
+/// machine: a graduation moves PendingSnapshot -> SnapshotDone -> OutcomeDone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraduationStatus {
+    /// Discovered; waiting for the T0+window feature snapshot.
+    PendingSnapshot,
+    /// Feature snapshot taken; waiting for the outcome window to mature.
+    SnapshotDone,
+    /// Outcome recorded; terminal state.
+    OutcomeDone,
+}
+
+impl GraduationStatus {
+    /// The string persisted in the `graduations.status` column.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GraduationStatus::PendingSnapshot => "pending_snapshot",
+            GraduationStatus::SnapshotDone => "snapshot_done",
+            GraduationStatus::OutcomeDone => "outcome_done",
+        }
+    }
+
+    /// Parse a `graduations.status` string back into the enum.
+    ///
+    /// Named `parse_status`, not `from_str`: an inherent `from_str` trips
+    /// clippy's `should_implement_trait` lint (a hard error under
+    /// `-D warnings`), and implementing the real `std::str::FromStr` trait would
+    /// force an `Err` type other than the crate `Result`.
+    pub fn parse_status(s: &str) -> Result<Self> {
+        match s {
+            "pending_snapshot" => Ok(GraduationStatus::PendingSnapshot),
+            "snapshot_done" => Ok(GraduationStatus::SnapshotDone),
+            "outcome_done" => Ok(GraduationStatus::OutcomeDone),
+            other => Err(StormError::Parse(format!(
+                "unknown graduation status '{other}'"
+            ))),
+        }
+    }
+}
+
+/// A discovered pump.fun graduation, as stored in the `graduations` table.
+#[derive(Debug, Clone)]
+pub struct GraduationRow {
+    /// The graduated token mint — the unique idempotency key.
+    pub mint: Pubkey,
+    /// The token's canonical PumpSwap pool address.
+    pub pool_address: Pubkey,
+    /// The token's bonding-curve account address.
+    pub bonding_curve_address: Pubkey,
+    /// `getSlot` value observed when the graduation was detected.
+    pub graduation_slot: u64,
+    /// Unix seconds the collector first detected the graduation (its T0).
+    pub detected_at: i64,
+    /// Lifecycle status.
+    pub status: GraduationStatus,
+}
+
+/// A `graduations` row read back from the store, including its row id.
+#[derive(Debug, Clone)]
+pub struct StoredGraduation {
+    /// The `graduations.id` primary key.
+    pub id: i64,
+    pub mint: Pubkey,
+    pub pool_address: Pubkey,
+    pub bonding_curve_address: Pubkey,
+    pub graduation_slot: u64,
+    pub detected_at: i64,
+    pub status: GraduationStatus,
+}
+
 impl Store {
     /// Open (creating if necessary) a SQLite store at `database_url`.
     /// `database_url` examples: `sqlite::memory:`, `sqlite://./storm.db`,
@@ -134,6 +204,94 @@ impl Store {
             captured_at: ts,
         }))
     }
+
+    /// Insert a discovered graduation. Idempotent: if a row with the same
+    /// `mint` already exists this is a no-op and returns `Ok(None)`. On a
+    /// fresh insert it returns `Ok(Some(new_row_id))`.
+    pub async fn insert_graduation(&self, grad: &GraduationRow) -> Result<Option<i64>> {
+        let res = sqlx::query(
+            "INSERT INTO graduations \
+             (mint, pool_address, bonding_curve_address, graduation_slot, detected_at, status) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+             ON CONFLICT(mint) DO NOTHING",
+        )
+        .bind(grad.mint.to_string())
+        .bind(grad.pool_address.to_string())
+        .bind(grad.bonding_curve_address.to_string())
+        .bind(grad.graduation_slot as i64)
+        .bind(grad.detected_at)
+        .bind(grad.status.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StormError::Rpc(format!("insert graduation: {e}")))?;
+
+        // rows_affected() is 0 when the ON CONFLICT clause suppressed the insert.
+        if res.rows_affected() == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(res.last_insert_rowid()))
+        }
+    }
+
+    /// All graduations currently in `status`, oldest-detected first — the
+    /// collector's work queue for that lifecycle stage.
+    pub async fn graduations_with_status(
+        &self,
+        status: GraduationStatus,
+    ) -> Result<Vec<StoredGraduation>> {
+        let rows: Vec<(i64, String, String, String, i64, i64, String)> = sqlx::query_as(
+            "SELECT id, mint, pool_address, bonding_curve_address, graduation_slot, \
+                    detected_at, status \
+             FROM graduations WHERE status = ?1 ORDER BY detected_at ASC, id ASC",
+        )
+        .bind(status.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| StormError::Rpc(format!("graduations_with_status: {e}")))?;
+
+        rows.into_iter()
+            .map(|(id, mint, pool, bc, slot, detected_at, st)| {
+                Ok(StoredGraduation {
+                    id,
+                    mint: parse_pubkey(&mint, "graduation mint")?,
+                    pool_address: parse_pubkey(&pool, "graduation pool_address")?,
+                    bonding_curve_address: parse_pubkey(&bc, "graduation bonding_curve_address")?,
+                    graduation_slot: slot as u64,
+                    detected_at,
+                    status: GraduationStatus::parse_status(&st)?,
+                })
+            })
+            .collect()
+    }
+
+    /// Advance a graduation to a new lifecycle status.
+    pub async fn set_graduation_status(
+        &self,
+        graduation_id: i64,
+        status: GraduationStatus,
+    ) -> Result<()> {
+        sqlx::query("UPDATE graduations SET status = ?1 WHERE id = ?2")
+            .bind(status.as_str())
+            .bind(graduation_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StormError::Rpc(format!("set_graduation_status: {e}")))?;
+        Ok(())
+    }
+
+    /// Total number of rows in `graduations`.
+    pub async fn graduation_count(&self) -> Result<i64> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM graduations")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| StormError::Rpc(format!("graduation_count: {e}")))?;
+        Ok(row.0)
+    }
+}
+
+/// Parse a base58 `Pubkey` stored as TEXT, attributing failures to `field`.
+fn parse_pubkey(s: &str, field: &str) -> Result<Pubkey> {
+    Pubkey::from_str(s).map_err(|e| StormError::Parse(format!("invalid {field} pubkey '{s}': {e}")))
 }
 
 #[cfg(test)]
@@ -188,6 +346,71 @@ mod tests {
             .is_none());
     }
 
+    fn sample_graduation(mint: Pubkey) -> GraduationRow {
+        GraduationRow {
+            mint,
+            pool_address: Pubkey::new_unique(),
+            bonding_curve_address: Pubkey::new_unique(),
+            graduation_slot: 250_000_000,
+            detected_at: 1_779_000_000,
+            status: GraduationStatus::PendingSnapshot,
+        }
+    }
+
+    #[tokio::test]
+    async fn graduation_insert_is_idempotent_on_mint() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        let mint = Pubkey::new_unique();
+        let grad = sample_graduation(mint);
+
+        // First insert returns the new row id.
+        let id1 = store.insert_graduation(&grad).await.unwrap();
+        assert!(id1.is_some(), "first insert should return an id");
+
+        // Re-inserting the SAME mint is a no-op: returns None, no duplicate row.
+        let id2 = store.insert_graduation(&grad).await.unwrap();
+        assert!(id2.is_none(), "duplicate mint insert should be a no-op");
+        assert_eq!(store.graduation_count().await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn graduation_status_queue_and_transition() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        let grad = sample_graduation(Pubkey::new_unique());
+        let id = store.insert_graduation(&grad).await.unwrap().unwrap();
+
+        // Freshly inserted -> appears in the pending_snapshot queue.
+        let pending = store
+            .graduations_with_status(GraduationStatus::PendingSnapshot)
+            .await
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, id);
+        assert_eq!(pending[0].mint, grad.mint);
+        assert_eq!(pending[0].pool_address, grad.pool_address);
+
+        // Advance it; it leaves the pending queue and enters snapshot_done.
+        store
+            .set_graduation_status(id, GraduationStatus::SnapshotDone)
+            .await
+            .unwrap();
+        assert!(store
+            .graduations_with_status(GraduationStatus::PendingSnapshot)
+            .await
+            .unwrap()
+            .is_empty());
+        let done = store
+            .graduations_with_status(GraduationStatus::SnapshotDone)
+            .await
+            .unwrap();
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].id, id);
+    }
+
     #[tokio::test]
     async fn migration_0002_creates_survival_tables() {
         let store = Store::open("sqlite::memory:").await.unwrap();
@@ -199,11 +422,10 @@ mod tests {
             "outcomes",
             "collector_state",
         ] {
-            let count: (i64,) =
-                sqlx::query_as(&format!("SELECT COUNT(*) FROM {table}"))
-                    .fetch_one(&store.pool)
-                    .await
-                    .unwrap_or_else(|e| panic!("table {table} not queryable: {e}"));
+            let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(&store.pool)
+                .await
+                .unwrap_or_else(|e| panic!("table {table} not queryable: {e}"));
             assert_eq!(count.0, 0, "{table} should start empty");
         }
     }
