@@ -156,6 +156,21 @@ pub struct FeatureSnapshotRow {
     pub oldest_signature_age_secs: Option<i64>,
 }
 
+/// The recorded outcome for a graduation, as stored in the `outcomes` table.
+#[derive(Debug, Clone)]
+pub struct OutcomeRow {
+    /// FK to the `graduations` row this outcome describes.
+    pub graduation_id: i64,
+    /// Unix seconds the outcome was checked.
+    pub outcome_at: i64,
+    /// `true` = the token survived; `false` = it rugged / died.
+    pub survived: bool,
+    /// Pool base-token reserve (raw units) at the outcome check.
+    pub base_reserve: u64,
+    /// Pool quote-token (wrapped SOL) reserve (lamports) at the outcome check.
+    pub quote_reserve: u64,
+}
+
 impl Store {
     /// Open (creating if necessary) a SQLite store at `database_url`.
     /// `database_url` examples: `sqlite::memory:`, `sqlite://./storm.db`,
@@ -373,6 +388,61 @@ impl Store {
                 .map_err(|e| StormError::Rpc(format!("has_feature_snapshot: {e}")))?;
         Ok(row.0 > 0)
     }
+
+    /// Persist the recorded outcome for a graduation. The `graduation_id UNIQUE`
+    /// constraint backstops the collector's `has_outcome` idempotency check.
+    pub async fn insert_outcome(&self, row: &OutcomeRow) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO outcomes \
+             (graduation_id, outcome_at, survived, base_reserve, quote_reserve) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(row.graduation_id)
+        .bind(row.outcome_at)
+        .bind(row.survived as i64)
+        .bind(row.base_reserve.to_string())
+        .bind(row.quote_reserve.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StormError::Rpc(format!("insert outcome: {e}")))?;
+        Ok(())
+    }
+
+    /// True if an outcome already exists for `graduation_id`.
+    pub async fn has_outcome(&self, graduation_id: i64) -> Result<bool> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM outcomes WHERE graduation_id = ?1")
+            .bind(graduation_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| StormError::Rpc(format!("has_outcome: {e}")))?;
+        Ok(row.0 > 0)
+    }
+
+    /// Upsert a `collector_state` key/value pair (daemon heartbeat / progress).
+    pub async fn set_collector_state(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO collector_state (key, value, updated_at) \
+             VALUES (?1, ?2, unixepoch()) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StormError::Rpc(format!("set_collector_state: {e}")))?;
+        Ok(())
+    }
+
+    /// Read a `collector_state` value, or `None` if the key is absent.
+    pub async fn get_collector_state(&self, key: &str) -> Result<Option<String>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT value FROM collector_state WHERE key = ?1")
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| StormError::Rpc(format!("get_collector_state: {e}")))?;
+        Ok(row.map(|(v,)| v))
+    }
 }
 
 /// Parse a base58 `Pubkey` stored as TEXT, attributing failures to `field`.
@@ -573,6 +643,70 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(age.0, None);
+    }
+
+    #[tokio::test]
+    async fn outcome_round_trips_and_existence_check() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        let gid = store
+            .insert_graduation(&sample_graduation(Pubkey::new_unique()))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(!store.has_outcome(gid).await.unwrap());
+
+        let outcome = OutcomeRow {
+            graduation_id: gid,
+            outcome_at: 1_780_000_000,
+            survived: true,
+            base_reserve: 150_000_000_000_000,
+            quote_reserve: 60_000_000_000,
+        };
+        store.insert_outcome(&outcome).await.unwrap();
+        assert!(store.has_outcome(gid).await.unwrap());
+
+        let (survived, quote): (i64, String) =
+            sqlx::query_as("SELECT survived, quote_reserve FROM outcomes WHERE graduation_id = ?1")
+                .bind(gid)
+                .fetch_one(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(survived, 1);
+        assert_eq!(quote, "60000000000");
+    }
+
+    #[tokio::test]
+    async fn collector_state_is_an_upsert() {
+        let store = Store::open("sqlite::memory:").await.unwrap();
+        store.migrate().await.unwrap();
+
+        // Unknown key -> None.
+        assert_eq!(
+            store.get_collector_state("last_cycle_at").await.unwrap(),
+            None
+        );
+
+        store
+            .set_collector_state("last_cycle_at", "1779000000")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_collector_state("last_cycle_at").await.unwrap(),
+            Some("1779000000".to_string())
+        );
+
+        // Writing the same key again overwrites, never duplicates.
+        store
+            .set_collector_state("last_cycle_at", "1779999999")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_collector_state("last_cycle_at").await.unwrap(),
+            Some("1779999999".to_string())
+        );
     }
 
     #[tokio::test]
