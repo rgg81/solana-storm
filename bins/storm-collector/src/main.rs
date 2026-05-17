@@ -38,6 +38,15 @@ struct Cli {
     once: bool,
 }
 
+/// The RPC URL with any query string removed — the query carries the API key,
+/// which must not be written to logs.
+fn redacted_rpc_url(url: &str) -> &str {
+    match url.split_once('?') {
+        Some((base, _)) => base,
+        None => url,
+    }
+}
+
 /// Current wall-clock time as Unix seconds. Isolated so the daemon's clock read
 /// is in one named place; the pure cycle logic takes the value as an argument.
 fn now_unix() -> i64 {
@@ -68,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(
         db = %cli.db,
-        rpc = %cfg.solana.rpc_url,
+        rpc = redacted_rpc_url(&cfg.solana.rpc_url),
         cycle_secs = collector_cfg.cycle_interval.as_secs(),
         once = cli.once,
         "storm-collector starting",
@@ -124,6 +133,19 @@ async fn sleep_or_shutdown(dur: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redacted_rpc_url_strips_the_api_key_query() {
+        assert_eq!(
+            redacted_rpc_url("https://mainnet.helius-rpc.com/?api-key=secret"),
+            "https://mainnet.helius-rpc.com/"
+        );
+        // A URL with no query string is returned unchanged.
+        assert_eq!(
+            redacted_rpc_url("https://api.mainnet-beta.solana.com"),
+            "https://api.mainnet-beta.solana.com"
+        );
+    }
 
     #[test]
     fn now_unix_is_a_plausible_recent_timestamp() {
