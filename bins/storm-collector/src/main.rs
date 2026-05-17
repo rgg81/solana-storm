@@ -16,6 +16,11 @@ mod schedule;
 #[allow(dead_code)]
 mod classify;
 
+// `discover` is reachable only once `main` calls the cycle (Task 11); allow
+// dead_code until then. Removed in Task 11.
+#[allow(dead_code)]
+mod discover;
+
 use clap::Parser;
 use storm_core::Config;
 
