@@ -89,6 +89,9 @@ pub fn parse_gpa_v2_response(result: &serde_json::Value) -> Result<ProgramAccoun
             ))
         })?;
 
+        // Each account is the standard encoded-account envelope —
+        // `{ "pubkey": ..., "account": { "data": [<base64>, "base64"] } }` —
+        // verified against Helius's live `getProgramAccountsV2` response.
         let data_b64 = item
             .pointer("/account/data/0")
             .and_then(|v| v.as_str())
@@ -108,10 +111,18 @@ pub fn parse_gpa_v2_response(result: &serde_json::Value) -> Result<ProgramAccoun
         accounts.push(ProgramAccountV2 { pubkey, data });
     }
 
-    let pagination_key = result
-        .get("paginationKey")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    // An absent or null `paginationKey` means the last page. A present-but-
+    // non-string value is a malformed response — error rather than silently
+    // truncating pagination, which would drop later pages of graduations.
+    let pagination_key = match result.get("paginationKey") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => Some(s.clone()),
+        Some(other) => {
+            return Err(StormError::Parse(format!(
+                "getProgramAccountsV2: 'paginationKey' is not a string: {other}"
+            )))
+        }
+    };
 
     Ok(ProgramAccountsV2Page {
         accounts,
@@ -209,6 +220,16 @@ mod tests {
     #[test]
     fn parse_response_missing_accounts_is_an_error() {
         let resp = serde_json::json!({ "paginationKey": "x" });
+        match parse_gpa_v2_response(&resp) {
+            Err(StormError::Parse(_)) => {}
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_response_rejects_non_string_pagination_key() {
+        // A present-but-non-string cursor must error, not silently truncate.
+        let resp = serde_json::json!({ "accounts": [], "paginationKey": 42 });
         match parse_gpa_v2_response(&resp) {
             Err(StormError::Parse(_)) => {}
             other => panic!("expected Parse error, got {other:?}"),
