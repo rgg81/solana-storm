@@ -19,8 +19,7 @@ mod tests {
     use crate::bonding_curve::BondingCurve;
     use crate::pumpswap::PumpSwapPool;
 
-    const BONDING_CURVE_FIXTURE: &[u8] =
-        include_bytes!("../tests/fixtures/bonding_curve.bin");
+    const BONDING_CURVE_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/bonding_curve.bin");
     const POOL_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/pumpswap_pool.bin");
 
     #[test]

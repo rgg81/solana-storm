@@ -5,11 +5,7 @@ use crate::{read_pubkey, read_u64, PUMPFUN_PROGRAM_ID};
 
 /// Derive the bonding-curve account address for a token mint.
 pub fn bonding_curve_pda(mint: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(
-        &[b"bonding-curve", mint.as_ref()],
-        &PUMPFUN_PROGRAM_ID,
-    )
-    .0
+    Pubkey::find_program_address(&[b"bonding-curve", mint.as_ref()], &PUMPFUN_PROGRAM_ID).0
 }
 
 /// Parsed pump.fun bonding-curve account.
@@ -60,8 +56,7 @@ mod tests {
     const FIXTURE_MINT: &str = "5TfqNKZbn9AnNtzq8bbkyhKgcPGTfNDc9wNzFrTBpump";
     const FIXTURE_BONDING_CURVE: &str = "HLtp5EM2QRJZZXgSJqtYQ84tP8CDiziVHvFDGrEwW2wS";
 
-    const BONDING_CURVE_FIXTURE: &[u8] =
-        include_bytes!("../tests/fixtures/bonding_curve.bin");
+    const BONDING_CURVE_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/bonding_curve.bin");
 
     #[test]
     fn pda_matches_real_bonding_curve() {
