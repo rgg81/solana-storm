@@ -38,4 +38,15 @@ mod tests {
         let other = solana_sdk::pubkey::Pubkey::new_unique();
         assert!(!is_canonical_graduation(&pool, &other));
     }
+
+    #[test]
+    fn non_canonical_index_is_rejected() {
+        let mut pool = PumpSwapPool::unpack(POOL_FIXTURE).unwrap();
+        let mint = pool.base_mint;
+        // The real fixture passes (sanity check).
+        assert!(is_canonical_graduation(&pool, &mint));
+        // A non-zero index makes it non-canonical even with the correct mint.
+        pool.index = 1;
+        assert!(!is_canonical_graduation(&pool, &mint));
+    }
 }

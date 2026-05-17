@@ -26,6 +26,10 @@ impl BondingCurve {
     /// The on-chain account is larger (~150 bytes) with trailing zero padding.
     pub const MIN_LEN: usize = 8 + 40 + 1 + 32;
 
+    /// Anchor 8-byte discriminator for the `BondingCurve` account type.
+    /// `sha256("account:BondingCurve")[..8]` as stored on-chain.
+    pub const DISCRIMINATOR: [u8; 8] = [0x17, 0xb7, 0xf8, 0x37, 0x60, 0xd8, 0xac, 0x60];
+
     /// Parse a bonding-curve account. Trailing padding bytes are ignored.
     pub fn unpack(data: &[u8]) -> Result<Self> {
         if data.len() < Self::MIN_LEN {
@@ -33,6 +37,12 @@ impl BondingCurve {
                 "bonding curve: expected >= {} bytes, got {}",
                 Self::MIN_LEN,
                 data.len()
+            )));
+        }
+        if data[..8] != Self::DISCRIMINATOR {
+            return Err(StormError::Parse(format!(
+                "bonding curve: wrong discriminator (got {:?})",
+                &data[..8]
             )));
         }
         Ok(Self {
@@ -75,6 +85,19 @@ mod tests {
 
     #[test]
     fn unpack_rejects_short_data() {
-        assert!(BondingCurve::unpack(&[0u8; 40]).is_err());
+        match BondingCurve::unpack(&[0u8; 40]) {
+            Err(StormError::Parse(m)) => assert!(m.contains("expected")),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unpack_rejects_wrong_discriminator() {
+        // MIN_LEN bytes, all zeros — discriminator [0;8] is wrong.
+        let data = vec![0u8; BondingCurve::MIN_LEN];
+        match BondingCurve::unpack(&data) {
+            Err(StormError::Parse(m)) => assert!(m.contains("discriminator")),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
     }
 }

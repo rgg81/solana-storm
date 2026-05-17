@@ -27,6 +27,10 @@ impl PumpSwapPool {
     /// The on-chain account is larger (~301 bytes) with trailing zero padding.
     pub const MIN_LEN: usize = 8 + 1 + 2 + (6 * 32) + 8 + 32 + 1;
 
+    /// Anchor 8-byte discriminator for the `Pool` account type.
+    /// `sha256("account:Pool")[..8]` as stored on-chain.
+    pub const DISCRIMINATOR: [u8; 8] = [0xf1, 0x9a, 0x6d, 0x04, 0x11, 0xb1, 0x6d, 0xbc];
+
     /// Parse a PumpSwap pool account. Trailing padding bytes are ignored.
     pub fn unpack(data: &[u8]) -> Result<Self> {
         if data.len() < Self::MIN_LEN {
@@ -34,6 +38,12 @@ impl PumpSwapPool {
                 "pumpswap pool: expected >= {} bytes, got {}",
                 Self::MIN_LEN,
                 data.len()
+            )));
+        }
+        if data[..8] != Self::DISCRIMINATOR {
+            return Err(StormError::Parse(format!(
+                "pumpswap pool: wrong discriminator (got {:?})",
+                &data[..8]
             )));
         }
         Ok(Self {
@@ -63,6 +73,8 @@ mod tests {
         let pool = PumpSwapPool::unpack(POOL_FIXTURE).unwrap();
         // A canonical graduation pool has index 0.
         assert_eq!(pool.index, 0);
+        // pool_bump per fixture NOTES.md.
+        assert_eq!(pool.pool_bump, 255);
         // The two reserve token accounts are real pubkeys.
         assert_ne!(pool.pool_base_token_account, Pubkey::default());
         assert_ne!(pool.pool_quote_token_account, Pubkey::default());
@@ -70,6 +82,19 @@ mod tests {
 
     #[test]
     fn unpack_rejects_short_data() {
-        assert!(PumpSwapPool::unpack(&[0u8; 50]).is_err());
+        match PumpSwapPool::unpack(&[0u8; 50]) {
+            Err(StormError::Parse(m)) => assert!(m.contains("expected")),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unpack_rejects_wrong_discriminator() {
+        // MIN_LEN bytes, all zeros — discriminator [0;8] is wrong.
+        let data = vec![0u8; PumpSwapPool::MIN_LEN];
+        match PumpSwapPool::unpack(&data) {
+            Err(StormError::Parse(m)) => assert!(m.contains("discriminator")),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
     }
 }
