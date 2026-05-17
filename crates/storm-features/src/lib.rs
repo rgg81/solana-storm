@@ -87,6 +87,9 @@ pub async fn extract_features(
     pool: &Pubkey,
     now_unix: i64,
 ) -> Result<FeatureVector> {
+    // TODO(v2): the independent leading fetches (mint, bonding curve, pool,
+    // top holders) could run concurrently via tokio::try_join! to cut latency.
+
     // --- contract flags + bonding curve --------------------------------
     let mint_info = fetch::fetch_mint(rpc, mint).await?;
     let contract = contract::contract_flags(&mint_info);

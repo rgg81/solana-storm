@@ -20,9 +20,13 @@ pub struct HolderFeatures {
     /// Number of holders visible in the top-N set (at most 20 from one RPC
     /// call). A lower bound on the true holder count.
     pub visible_holder_count: usize,
-    /// Combined balance of the top 10 holders / total supply.
+    /// Combined balance of the top 10 token *accounts* / total supply.
+    /// Because one owner may hold multiple token accounts, this is a lower
+    /// bound on true owner concentration.
     pub top10_concentration: f64,
-    /// Combined balance of the top 20 holders / total supply.
+    /// Combined balance of the top 20 token *accounts* / total supply.
+    /// Because one owner may hold multiple token accounts, this is a lower
+    /// bound on true owner concentration.
     pub top20_concentration: f64,
     /// The creator's remaining token balance / total supply ("dev's bag").
     pub creator_bag_fraction: f64,
