@@ -13,6 +13,8 @@ pub const PUMPFUN_PROGRAM_ID: Pubkey =
 pub const PUMPSWAP_PROGRAM_ID: Pubkey =
     solana_sdk::pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 
+pub mod bonding_curve;
+
 // ---- little-endian byte readers (crate-internal) --------------------------
 // `#[allow(dead_code)]` is temporary: Tasks 4-5 consume these helpers. It keeps
 // the CI `clippy -D warnings` gate green on the intermediate commits; the
