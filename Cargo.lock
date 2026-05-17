@@ -6009,6 +6009,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-collector"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "solana-client",
+ "solana-sdk",
+ "storm-core",
+ "storm-features",
+ "storm-pumpfun",
+ "storm-solana",
+ "storm-store",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "storm-core"
 version = "0.1.0"
 dependencies = [
