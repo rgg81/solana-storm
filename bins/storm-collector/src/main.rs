@@ -6,6 +6,11 @@
 
 mod config;
 
+// `schedule`'s pure functions are reachable only once `main` calls the cycle
+// (Task 11); allow dead_code until then. The whole allow is removed in Task 11.
+#[allow(dead_code)]
+mod schedule;
+
 use clap::Parser;
 use storm_core::Config;
 
