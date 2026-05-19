@@ -74,7 +74,7 @@ def train_survival_model(
     """
     n = len(X)
     n_calib = int(round(n * calibration_fraction))
-    n_calib = max(0, min(n_calib, n - 1))  # leave at least 1 training row
+    n_calib = max(0, min(n_calib, n - 1))  # n_calib <= n-1 => split >= 1 (fit set non-empty)
     split = n - n_calib
 
     X_fit, y_fit = X.iloc[:split], y.iloc[:split]
