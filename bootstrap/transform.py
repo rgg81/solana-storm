@@ -144,6 +144,15 @@ def merge_liquidity(
         record.liq_quote_reserve = str(row["liq_quote_reserve"])
 
 
+# pump_evt_tradeevent reserve columns; a NULL means Dune left the row
+# undecoded (~1% of rows), so it is not a usable bonding-curve snapshot.
+_CURVE_RESERVE_KEYS = (
+    "real_sol_reserves",
+    "real_token_reserves",
+    "virtual_token_reserves",
+)
+
+
 def merge_bonding_curve(
     records: Dict[str, GraduationRecord], rows: List[dict]
 ) -> None:
@@ -151,7 +160,9 @@ def merge_bonding_curve(
 
     "Before migration" is by slot, not timestamp (findings caveat 4): only
     trades whose evt_block_slot is strictly less than the mint's
-    graduation_slot count.
+    graduation_slot count. Trade rows with a NULL reserve are skipped (Dune
+    leaves ~1% of pump_evt_tradeevent rows undecoded); the latest fully
+    populated pre-migration trade is used instead.
     """
     best_by_mint: Dict[str, dict] = {}
     for row in rows:
@@ -159,6 +170,8 @@ def merge_bonding_curve(
         record = records.get(mint)
         if record is None:
             continue
+        if any(row[key] is None for key in _CURVE_RESERVE_KEYS):
+            continue  # undecoded trade row -- not a usable curve snapshot
         slot = int(row["evt_block_slot"])
         if slot >= record.graduation_slot:
             continue  # at/after migration -> not the pre-graduation state

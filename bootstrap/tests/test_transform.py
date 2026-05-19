@@ -154,6 +154,49 @@ def test_merge_bonding_curve_picks_last_trade_before_migration_slot():
     assert a.curve_token_total_supply == "0"
 
 
+def test_merge_bonding_curve_skips_trade_rows_with_null_reserves():
+    """Dune leaves ~1% of pump_evt_tradeevent rows undecoded (NULL reserves).
+    Such rows are skipped, not crashed on; the latest fully populated trade is
+    used, and a mint with only undecoded rows keeps its NULL curve fields.
+    """
+    recs = transform.parse_graduations(grad_rows())
+    bc_rows = [
+        # MINT_A: a populated trade, then a later undecoded one.
+        {
+            "mint": "MINT_A",
+            "real_sol_reserves": "85005359500",
+            "real_token_reserves": "0",
+            "virtual_token_reserves": "0",
+            "evt_block_slot": 311999990,
+        },
+        {
+            "mint": "MINT_A",
+            "real_sol_reserves": None,
+            "real_token_reserves": None,
+            "virtual_token_reserves": None,
+            "evt_block_slot": 311999999,  # latest, but undecoded -> skipped
+        },
+        # MINT_B: every trade row is undecoded.
+        {
+            "mint": "MINT_B",
+            "real_sol_reserves": None,
+            "real_token_reserves": None,
+            "virtual_token_reserves": None,
+            "evt_block_slot": 317999990,
+        },
+    ]
+    transform.merge_bonding_curve(recs, bc_rows)
+    # MINT_A: the undecoded latest row is skipped -> the populated slot-90 trade.
+    a = recs["MINT_A"]
+    assert a.curve_real_sol_reserves == "85005359500"
+    assert a.curve_real_token_reserves == "0"
+    assert a.curve_token_total_supply == "0"
+    # MINT_B: no usable trade row -> curve fields stay NULL.
+    b = recs["MINT_B"]
+    assert b.curve_real_sol_reserves is None
+    assert b.curve_token_total_supply is None
+
+
 def test_merge_contract_flags_sets_mint_authority_present():
     recs = transform.parse_graduations(grad_rows())
     flag_rows = [

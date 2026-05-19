@@ -80,6 +80,7 @@ def test_bonding_curve_sql_windows_per_mint_before_migration():
     assert "evt_block_slot" in low
     assert "row_number()" in low  # one row per mint, not every trade
     assert "< t.grad_slot" in low  # strictly before the migration slot
+    assert "is not null" in low  # undecoded (NULL-reserve) trade rows excluded
     assert "'MINT1'" in sql and "'MINT2'" in sql
     assert "312000000" in sql and "318000000" in sql
 

@@ -191,7 +191,8 @@ def bonding_curve_sql(pairs: Iterable[tuple]) -> str:
     timestamp) and the one-row-per-mint reduction are done in SQL via a
     ROW_NUMBER window. A token has hundreds of bonding-curve trades, so
     returning every trade is a ~hundredfold datapoint blow-up; only the final
-    pre-migration state is needed.
+    pre-migration state is needed. Rows with a NULL reserve are excluded so the
+    surviving last row is the last fully decoded trade.
     """
     values = _sql_values_int_pairs(pairs)
     return f"""
@@ -211,6 +212,9 @@ trades AS (
     FROM pumpdotfun_solana.pump_evt_tradeevent e
     JOIN targets t ON e.mint = t.mint
     WHERE e.evt_block_slot < t.grad_slot
+      AND e.real_sol_reserves IS NOT NULL
+      AND e.real_token_reserves IS NOT NULL
+      AND e.virtual_token_reserves IS NOT NULL
 )
 SELECT mint, real_sol_reserves, real_token_reserves,
        virtual_token_reserves, evt_block_slot
