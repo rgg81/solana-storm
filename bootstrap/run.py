@@ -62,6 +62,13 @@ def _settle_cutoff(config: Config) -> str:
     return cutoff.strftime("%Y-%m-%d")
 
 
+def _fmt_ts(unix_secs: int) -> str:
+    """A Unix timestamp as a Dune 'YYYY-MM-DD HH:MM:SS' UTC string."""
+    return datetime.fromtimestamp(int(unix_secs), tz=timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+
 def _run_cached_stage(
     client: DuneClient,
     meter: CreditMeter,
@@ -136,16 +143,18 @@ def run_etl(config: Config) -> None:
         return
 
     mints = sorted(records.keys())
-    pools = sorted({r.pool_address for r in records.values()})
+    pool_pairs = sorted(
+        {(r.pool_address, _fmt_ts(r.graduation_time)) for r in records.values()}
+    )
 
     # --- stage 2: outcome label (event-batched) ---
     outcome_rows: List[dict] = []
-    for index, pool_batch in enumerate(
-        _batched(pools, config.event_batch_size)
+    for index, pair_batch in enumerate(
+        _batched(pool_pairs, config.event_batch_size)
     ):
         outcome_rows += _run_cached_stage(
             client, meter, config, "outcome",
-            queries.outcome_sql(pool_batch, window_start=config.window_start),
+            queries.outcome_sql(pair_batch, window_start=config.window_start),
             batch=index,
         )
     transform.merge_outcome(
@@ -155,12 +164,12 @@ def run_etl(config: Config) -> None:
 
     # --- stage 3: liquidity at ~T0+12h (event-batched) ---
     liq_rows: List[dict] = []
-    for index, pool_batch in enumerate(
-        _batched(pools, config.event_batch_size)
+    for index, pair_batch in enumerate(
+        _batched(pool_pairs, config.event_batch_size)
     ):
         liq_rows += _run_cached_stage(
             client, meter, config, "liquidity",
-            queries.liquidity_sql(pool_batch, window_start=config.window_start),
+            queries.liquidity_sql(pair_batch, window_start=config.window_start),
             batch=index,
         )
     # withdrawn_pools is left empty: the findings heuristic treats every
@@ -191,14 +200,13 @@ def run_etl(config: Config) -> None:
     transform.merge_contract_flags(records, flag_rows)
 
     # --- stage 6: deployer signal -- FIRST-CLASS (mint-batched) ---
-    max_grad = _settle_cutoff(config)
     dep_rows: List[dict] = []
     for index, mint_batch in enumerate(
         _batched(mints, config.flag_batch_size)
     ):
         dep_rows += _run_cached_stage(
             client, meter, config, "deployer",
-            queries.deployer_sql(mint_batch, max_grad_time=max_grad),
+            queries.deployer_sql(mint_batch),
             batch=index,
         )
     transform.merge_deployer(records, dep_rows)
@@ -234,27 +242,6 @@ def run_etl(config: Config) -> None:
                 config.cache_dir, "holders", {"timed_out": True}, index
             )
     transform.merge_holders(records, holder_rows)
-
-    # --- fill defaults for NOT-NULL columns that may have no Dune data ---
-    # Some mints are absent from spl_token_call_initializemint2 (they used
-    # initializeMint v1) or from pump_call_create (findings caveat 8).
-    # Bonding-curve rows may also be missing for very old or edge-case mints.
-    # We fill conservative defaults rather than drop these records.
-    for record in records.values():
-        if record.mint_authority_present is None:
-            record.mint_authority_present = 1  # not revoked = authority present
-        if record.curve_real_sol_reserves is None:
-            record.curve_real_sol_reserves = "0"
-        if record.curve_real_token_reserves is None:
-            record.curve_real_token_reserves = "0"
-        if record.curve_token_total_supply is None:
-            record.curve_token_total_supply = "0"
-        if record.deployer_wallet is None:
-            record.deployer_wallet = ""
-        if record.deployer_prior_launches is None:
-            record.deployer_prior_launches = 0
-        if record.deployer_age_secs is None:
-            record.deployer_age_secs = 0
 
     # --- load ---
     inserted = load_records(conn, list(records.values()))

@@ -27,6 +27,26 @@ def _sql_in_list(values: Iterable[str]) -> str:
     return ", ".join(out)
 
 
+def _sql_values_pairs(pairs: Iterable[tuple]) -> str:
+    """Render (pool, grad_time) pairs as a SQL VALUES body:
+    `(CAST('pool' AS VARCHAR), TIMESTAMP 'grad_time'), ...`.
+
+    `grad_time` is a 'YYYY-MM-DD HH:MM:SS' string. Raises ValueError if any
+    value contains a single quote (defence against a malformed value).
+    """
+    out = []
+    for pool, grad_time in pairs:
+        pool_text, time_text = str(pool), str(grad_time)
+        if "'" in pool_text or "'" in time_text:
+            raise ValueError(
+                f"value contains a quote, refusing: {pool_text!r} {time_text!r}"
+            )
+        out.append(
+            f"(CAST('{pool_text}' AS VARCHAR), TIMESTAMP '{time_text}')"
+        )
+    return ",\n    ".join(out)
+
+
 def graduations_sql(window_start: str, settle_cutoff: str) -> str:
     """The graduations list: PumpSwap-era migrations whose outcome is settled.
 
@@ -50,31 +70,38 @@ ORDER BY call_block_time
 """.strip()
 
 
-def outcome_sql(pools: Iterable[str], window_start: str = "2025-11-01") -> str:
-    """Outcome label: the last pool reserves observed for each pool.
+def outcome_sql(pairs: Iterable[tuple], window_start: str = "2025-11-01") -> str:
+    """Outcome label: the pool's reserves at the latest trade inside each
+    token's settled T0+12d..T0+16d window.
 
-    Unions buy/sell events for the pool batch and keeps the latest event per
-    pool. The graduations-list query already excludes tokens younger than the
-    settle window, so the latest event is effectively the post-horizon
-    (settled) state -- see the plan's self-review for the timing rationale.
-
-    window_start limits the scan to PumpSwap-era events only, which greatly
-    reduces the data scanned and avoids free-engine timeouts.
+    `pairs` is a list of (pool_address, graduation_time) where graduation_time
+    is a 'YYYY-MM-DD HH:MM:SS' string. The static `window_start` floor lets the
+    engine prune the (very large) event tables; the per-token BETWEEN refines
+    to the correct fixed horizon. A pool with no trade in its window had no
+    activity at ~2 weeks -- the transform treats that as rugged.
     """
-    pool_list = _sql_in_list(pools)
+    values = _sql_values_pairs(pairs)
     return f"""
-WITH events AS (
-    SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
-           evt_block_time
-    FROM pumpdotfun_solana.pump_amm_evt_buyevent
-    WHERE pool IN ({pool_list})
-      AND evt_block_time >= TIMESTAMP '{window_start}'
+WITH targets(pool, grad_time) AS (
+    VALUES
+    {values}
+),
+events AS (
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time
+    FROM pumpdotfun_solana.pump_amm_evt_buyevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '12' DAY
+                               AND t.grad_time + INTERVAL '16' DAY
     UNION ALL
-    SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
-           evt_block_time
-    FROM pumpdotfun_solana.pump_amm_evt_sellevent
-    WHERE pool IN ({pool_list})
-      AND evt_block_time >= TIMESTAMP '{window_start}'
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time
+    FROM pumpdotfun_solana.pump_amm_evt_sellevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '12' DAY
+                               AND t.grad_time + INTERVAL '16' DAY
 ),
 ranked AS (
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
@@ -93,29 +120,35 @@ WHERE rn = 1
 """.strip()
 
 
-def liquidity_sql(pools: Iterable[str], window_start: str = "2025-11-01") -> str:
-    """Liquidity at ~T0+12h: the last pool reserves for each pool in the batch.
+def liquidity_sql(pairs: Iterable[tuple], window_start: str = "2025-11-01") -> str:
+    """Liquidity near T0+12h: the pool's reserves at the latest trade inside
+    each token's [T0, T0+12h] window.
 
-    Same buy/sell-event tables as the outcome query. snapshot timing is
-    approximate (spec 5); the merge step keeps the latest event per pool.
-
-    window_start limits the scan to PumpSwap-era events only, which greatly
-    reduces the data scanned and avoids free-engine timeouts.
+    `pairs` is a list of (pool_address, graduation_time) strings, as in
+    `outcome_sql`. A pool with no trade in the window leaves liq reserves NULL.
     """
-    pool_list = _sql_in_list(pools)
+    values = _sql_values_pairs(pairs)
     return f"""
-WITH events AS (
-    SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
-           evt_block_time
-    FROM pumpdotfun_solana.pump_amm_evt_buyevent
-    WHERE pool IN ({pool_list})
-      AND evt_block_time >= TIMESTAMP '{window_start}'
+WITH targets(pool, grad_time) AS (
+    VALUES
+    {values}
+),
+events AS (
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time
+    FROM pumpdotfun_solana.pump_amm_evt_buyevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time
+                               AND t.grad_time + INTERVAL '12' HOUR
     UNION ALL
-    SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
-           evt_block_time
-    FROM pumpdotfun_solana.pump_amm_evt_sellevent
-    WHERE pool IN ({pool_list})
-      AND evt_block_time >= TIMESTAMP '{window_start}'
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time
+    FROM pumpdotfun_solana.pump_amm_evt_sellevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time
+                               AND t.grad_time + INTERVAL '12' HOUR
 ),
 ranked AS (
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
@@ -182,44 +215,35 @@ LEFT JOIN revokes ON revokes.mint = minted.mint
 """.strip()
 
 
-def deployer_sql(mints: Iterable[str], max_grad_time: str) -> str:
-    """Deployer signal (first-class): prior pump.fun launches and wallet age.
+def deployer_sql(mints: Iterable[str]) -> str:
+    """Deployer signal (first-class), from `pump_amm_evt_createpoolevent` --
+    one row per graduation, full coverage. For each target token: its creator
+    (`coin_creator`), the creator's count of prior graduations, and the span in
+    seconds from the creator's first graduation to this one.
 
-    Unions pump_call_create and pump_call_create_v2 (findings caveat 8), then
-    self-joins each target token's creator to that creator's full history --
-    count of prior creates and earliest create time.
+    `deployer_prior_launches` is therefore "prior graduations by this creator"
+    -- a fully-covered, history-native deployer track-record signal.
     """
     mint_list = _sql_in_list(mints)
     return f"""
-WITH creates AS (
-    SELECT account_mint, account_user, call_block_time
-    FROM pumpdotfun_solana.pump_call_create
-    UNION ALL
-    SELECT account_mint, account_user, call_block_time
-    FROM pumpdotfun_solana.pump_call_create_v2
-),
-target AS (
-    SELECT account_mint, account_user, call_block_time
-    FROM creates
-    WHERE account_mint IN ({mint_list})
+WITH targets AS (
+    SELECT base_mint AS mint, coin_creator, evt_block_time AS grad_time
+    FROM pumpdotfun_solana.pump_amm_evt_createpoolevent
+    WHERE base_mint IN ({mint_list})
 ),
 history AS (
-    SELECT account_user,
-           COUNT(*)              AS total_creates,
-           MIN(call_block_time)  AS first_create
-    FROM creates
-    WHERE call_block_time < TIMESTAMP '{max_grad_time}'
-    GROUP BY account_user
+    SELECT coin_creator, evt_block_time
+    FROM pumpdotfun_solana.pump_amm_evt_createpoolevent
 )
-SELECT target.account_mint AS mint,
-       target.account_user AS deployer_wallet,
-       history.total_creates AS deployer_prior_launches,
-       CAST(
-           date_diff('second', history.first_create,
-                     target.call_block_time) AS BIGINT
-       ) AS deployer_age_secs
-FROM target
-JOIN history ON history.account_user = target.account_user
+SELECT t.mint            AS mint,
+       t.coin_creator    AS deployer_wallet,
+       COUNT(*) FILTER (WHERE h.evt_block_time < t.grad_time)
+                         AS deployer_prior_launches,
+       CAST(date_diff('second', MIN(h.evt_block_time), t.grad_time) AS BIGINT)
+                         AS deployer_age_secs
+FROM targets t
+JOIN history h ON h.coin_creator = t.coin_creator
+GROUP BY t.mint, t.coin_creator, t.grad_time
 """.strip()
 
 

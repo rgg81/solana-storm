@@ -23,24 +23,51 @@ def test_graduations_sql_filters_window_and_settle_cutoff():
     assert "2026-05-03" in sql
 
 
-def test_outcome_sql_embeds_pools_and_the_event_tables():
-    sql = queries.outcome_sql(["POOL_A", "POOL_B"])
+def test_sql_values_pairs_renders_cast_and_timestamp():
+    result = queries._sql_values_pairs([("pool1", "2026-01-10 08:00:00")])
+    assert "CAST('pool1' AS VARCHAR)" in result
+    assert "TIMESTAMP '2026-01-10 08:00:00'" in result
+
+
+def test_sql_values_pairs_rejects_a_quote_in_pool():
+    with pytest.raises(ValueError):
+        queries._sql_values_pairs([("po'ol", "2026-01-10 08:00:00")])
+
+
+def test_sql_values_pairs_rejects_a_quote_in_time():
+    with pytest.raises(ValueError):
+        queries._sql_values_pairs([("pool", "2026-01-10 08:00:00' --")])
+
+
+def test_outcome_sql_embeds_pairs_and_the_event_tables():
+    sql = queries.outcome_sql(
+        [("POOL_A", "2026-01-10 08:00:00"), ("POOL_B", "2026-02-01 00:00:00")]
+    )
     low = sql.lower()
     assert "pump_amm_evt_buyevent" in low
     assert "pump_amm_evt_sellevent" in low
     assert "pool_quote_token_reserves" in low
     assert "pool_base_token_reserves" in low
     assert "union all" in low
-    # both pools quoted into the IN list.
-    assert "'POOL_A'" in sql and "'POOL_B'" in sql
+    # windowed intervals (per-token T0+12d..T0+16d)
+    assert "interval '12' day" in low
+    assert "interval '16' day" in low
+    # both pool addresses and timestamps embedded
+    assert "POOL_A" in sql and "POOL_B" in sql
+    assert "2026-01-10 08:00:00" in sql and "2026-02-01 00:00:00" in sql
 
 
-def test_liquidity_sql_targets_pools_and_the_event_tables():
-    sql = queries.liquidity_sql(["P1"])
+def test_liquidity_sql_targets_pairs_and_the_event_tables():
+    sql = queries.liquidity_sql(
+        [("P1", "2026-01-10 08:00:00")]
+    )
     low = sql.lower()
     assert "pump_amm_evt_buyevent" in low
     assert "pump_amm_evt_sellevent" in low
-    assert "'P1'" in sql
+    # windowed interval (T0 to T0+12h)
+    assert "interval '12' hour" in low
+    assert "P1" in sql
+    assert "2026-01-10 08:00:00" in sql
 
 
 def test_bonding_curve_sql_uses_tradeevent_and_mints():
@@ -64,17 +91,13 @@ def test_contract_flags_sql_joins_initializemint2_and_setauthority():
     assert "'MINTX'" in sql
 
 
-def test_deployer_sql_self_joins_create_and_create_v2():
-    sql = queries.deployer_sql(["MINTD"], max_grad_time="2026-05-03")
+def test_deployer_sql_uses_createpoolevent_and_coin_creator():
+    sql = queries.deployer_sql(["MINTD"])
     low = sql.lower()
-    assert "pump_call_create" in low
-    # create_v2 also covered (findings caveat 8).
-    assert "pump_call_create_v2" in low
-    assert "account_user" in low
-    assert "count(*)" in low
-    assert "min(call_block_time)" in low
+    assert "createpoolevent" in low
+    assert "coin_creator" in low
+    assert "base_mint" in low
     assert "'MINTD'" in sql
-    assert "2026-05-03" in sql
 
 
 def test_holders_sql_targets_spl_token_transfers_at_a_snapshot():

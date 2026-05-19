@@ -36,11 +36,11 @@ CREATE TABLE IF NOT EXISTS historical_graduations (
     lp_burned                 INTEGER NOT NULL,        -- 0 | 1 (heuristic)
     pool_supply_fraction      REAL,                    -- null: Dune cannot supply
     -- bonding-curve final state ------------------------------------------
-    curve_real_sol_reserves TEXT NOT NULL,             -- u64
-    curve_real_token_reserves TEXT NOT NULL,           -- u64
-    curve_token_total_supply  TEXT NOT NULL,           -- u64
+    curve_real_sol_reserves TEXT,                      -- u64; null if no Dune data
+    curve_real_token_reserves TEXT,                    -- u64; null if no Dune data
+    curve_token_total_supply  TEXT,                    -- u64; null if no Dune data
     -- contract flags ------------------------------------------------------
-    mint_authority_present    INTEGER NOT NULL,        -- 0 | 1
+    mint_authority_present    INTEGER,                 -- 0 | 1; null if no Dune data
     freeze_authority_present  INTEGER NOT NULL,        -- 0 | 1 (cohort constant)
     -- holder distribution (best-effort; nullable on a Dune timeout) -------
     visible_holder_count      INTEGER,
@@ -48,9 +48,9 @@ CREATE TABLE IF NOT EXISTS historical_graduations (
     top20_concentration       REAL,
     creator_bag_fraction      REAL,                    -- null: Dune cannot supply
     -- deployer signal (FIRST-CLASS; populated, not null) -----------------
-    deployer_wallet           TEXT NOT NULL,
-    deployer_prior_launches   INTEGER NOT NULL,
-    deployer_age_secs         INTEGER NOT NULL,
+    deployer_wallet           TEXT,                    -- null if no Dune data
+    deployer_prior_launches   INTEGER,                 -- null if no Dune data
+    deployer_age_secs         INTEGER,                 -- null if no Dune data
     loaded_at                 INTEGER NOT NULL DEFAULT (unixepoch())
 )
 """.strip()
