@@ -97,6 +97,7 @@ def run_backtest(
     tradeable: List[str] = []
     for mint in basket:
         if mint not in df.index:
+            log.warning("basket mint %s not in the dataset; skipping", mint)
             continue
         row = df.loc[mint]
         if not _has_entry_liquidity(row):
@@ -112,8 +113,16 @@ def run_backtest(
         row = df.loc[mint]
         entry_t = int(row["graduation_time"]) + entry_offset_secs
         exit_t = int(row["outcome_checked_at"])
-        if exit_t < entry_t:
-            exit_t = entry_t  # a degenerate horizon collapses to a flat exit
+        if exit_t <= entry_t:
+            # degenerate horizon: force the exit one second after entry so the
+            # ENTRY event always precedes the EXIT. Equal-timestamp events sort
+            # EXIT-before-ENTRY, which would otherwise leak the slot and drop
+            # the position.
+            log.warning(
+                "mint %s: degenerate horizon (outcome_checked_at=%d <= "
+                "entry=%d); forcing a minimal hold",
+                mint, int(row["outcome_checked_at"]), entry_t)
+            exit_t = entry_t + 1
         events.append((entry_t, 1, mint))   # kind 1 = ENTRY
         events.append((exit_t, 0, mint))    # kind 0 = EXIT
     # Sort by time; at equal time process EXITs (0) before ENTRYs (1) so a
@@ -131,7 +140,7 @@ def run_backtest(
         if kind == 1:  # ENTRY
             if free_slots <= 0:
                 continue  # no slot free -- this token is skipped entirely
-            slice_sol = bankroll / max(free_slots, 1)
+            slice_sol = bankroll / free_slots
             if slice_sol <= 0.0:
                 continue
             tokens = entry_fill(

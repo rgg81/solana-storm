@@ -86,16 +86,37 @@ def test_slot_cap_limits_concurrent_positions():
 
 
 def test_capital_recycles_from_an_exit_into_a_later_entry():
-    """One slot: the t=0 token exits at t=1000, freeing the slot for the
-    t=100 token, which enters at its horizon-free moment."""
-    df = sim_frame()
-    result = run_backtest(df, basket={"W1", "L"}, slot_count=1,
-                          initial_bankroll=100.0, dex_fee_rate=0.0025,
-                          entry_offset_secs=0)
-    # W1 occupies the slot [0,1000]; L is eligible at 100 but the slot is
-    # busy -- L can still enter after W1 exits because L's horizon is 1100.
-    held = {p.mint for p in result.positions}
-    assert "W1" in held
+    """One slot: Early occupies [0, 1000], exits, freeing the slot; Late
+    becomes eligible at t=2000 and must fill the now-free slot.  Both tokens
+    must produce a Position and Late's entry must be >= Early's exit."""
+    recycle_df = pd.DataFrame(
+        {
+            "graduation_time":    [0,    2000],
+            "outcome_checked_at": [1000, 3000],
+            "liq_base_reserve":   [1e15, 1e15],
+            "liq_quote_reserve":  [1e12, 1e12],
+            "outcome_base_reserve":  [8e14, 8e14],
+            "outcome_quote_reserve": [1.1e12, 1.1e12],
+        },
+        index=pd.Index(["Early", "Late"], name="mint"),
+    )
+    result = run_backtest(
+        recycle_df,
+        basket={"Early", "Late"},
+        slot_count=1,
+        initial_bankroll=100.0,
+        dex_fee_rate=0.0025,
+        entry_offset_secs=0,
+    )
+    mints = {p.mint for p in result.positions}
+    assert "Early" in mints, "Early never entered"
+    assert "Late" in mints, "Late never entered -- slot was not recycled"
+    early_pos = next(p for p in result.positions if p.mint == "Early")
+    late_pos  = next(p for p in result.positions if p.mint == "Late")
+    assert late_pos.entry_time >= early_pos.exit_time, (
+        f"Late entered at {late_pos.entry_time} before Early exited at "
+        f"{early_pos.exit_time} -- slot was not genuinely freed first"
+    )
 
 
 def test_token_with_nan_entry_liquidity_is_excluded_and_counted():
@@ -106,6 +127,40 @@ def test_token_with_nan_entry_liquidity_is_excluded_and_counted():
                           entry_offset_secs=0)
     assert "W2" not in {p.mint for p in result.positions}
     assert result.excluded_no_liquidity == 1
+
+
+def test_degenerate_horizon_still_closes_the_position():
+    """A token whose outcome_checked_at <= graduation_time must still produce
+    exactly one closed Position (no slot leak) with exit_time > entry_time."""
+    degen_df = pd.DataFrame(
+        {
+            "graduation_time": [0],
+            "outcome_checked_at": [0],   # degenerate: equal to entry instant
+            "liq_base_reserve": [1e15],
+            "liq_quote_reserve": [1e12],
+            "outcome_base_reserve": [8e14],
+            "outcome_quote_reserve": [1.1e12],
+        },
+        index=pd.Index(["DEGEN"], name="mint"),
+    )
+    result = run_backtest(
+        degen_df,
+        basket={"DEGEN"},
+        slot_count=1,
+        initial_bankroll=100.0,
+        dex_fee_rate=0.0025,
+        entry_offset_secs=0,
+    )
+    assert len(result.positions) == 1, (
+        "degenerate horizon leaked the slot -- expected 1 position, "
+        f"got {len(result.positions)}"
+    )
+    pos = result.positions[0]
+    assert pos.mint == "DEGEN"
+    assert pos.exit_time > pos.entry_time, (
+        f"exit_time ({pos.exit_time}) must be strictly after "
+        f"entry_time ({pos.entry_time})"
+    )
 
 
 def test_simulator_reads_outcome_reserves_only_at_exit():
