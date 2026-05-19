@@ -9,3 +9,8 @@
 *.log
 .claude/settings.local.json
 bootstrap/data/
+
+# Python bytecode and the local ETL database
+__pycache__/
+*.pyc
+storm.db
