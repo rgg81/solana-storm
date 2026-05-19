@@ -331,6 +331,36 @@ def _render_markdown(**ctx) -> str:
     lines.append("")
     lines.append("![outcome distribution](outcome_distribution.png)")
     lines.append("")
+    lines.append("## Caveats")
+    lines.append("")
+    lines.append("This backtest is honest about its limits (spec 11):")
+    lines.append("")
+    lines.append(
+        "- **Cost-basis equity curve.** The dataset has no intra-hold price "
+        "path, so an open position is held at its entry cost basis until its "
+        "exit event. The equity curve is an exit-event curve, and the "
+        "reported max drawdown is a lower bound -- not a measured "
+        "peak-to-trough."
+    )
+    lines.append(
+        "- **Hold-to-horizon.** Each position is held to a fixed horizon "
+        "with no peak capture, so a token that spiked then settled is scored "
+        "at its horizon value -- a conservative bias on the upside."
+    )
+    lines.append(
+        "- **Thin feature set.** No holder-distribution features; the "
+        "contract-flag columns are cohort constants. The model works with "
+        "what Phase 2 could reliably source."
+    )
+    lines.append(
+        "- **Approximate timing.** Features at ~T0+12h and the outcome at "
+        "~T0+14d are reconstructed snapshots, not exact."
+    )
+    lines.append(
+        "- **Limited statistical power.** ~4,755 tokens over ~5 folds is a "
+        "modest sample; treat the result as indicative."
+    )
+    lines.append("")
     lines.append("## Decision gate")
     lines.append("")
     lines.append(

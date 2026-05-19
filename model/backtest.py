@@ -108,6 +108,7 @@ def run_backtest(
         log.info("excluded %d basket token(s) with no entry liquidity",
                  excluded)
 
+    degenerate_horizon = 0
     events = []
     for mint in tradeable:
         row = df.loc[mint]
@@ -118,16 +119,19 @@ def run_backtest(
             # ENTRY event always precedes the EXIT. Equal-timestamp events sort
             # EXIT-before-ENTRY, which would otherwise leak the slot and drop
             # the position.
-            log.warning(
-                "mint %s: degenerate horizon (outcome_checked_at=%d <= "
-                "entry=%d); forcing a minimal hold",
-                mint, int(row["outcome_checked_at"]), entry_t)
+            degenerate_horizon += 1
             exit_t = entry_t + 1
         events.append((entry_t, 1, mint))   # kind 1 = ENTRY
         events.append((exit_t, 0, mint))    # kind 0 = EXIT
     # Sort by time; at equal time process EXITs (0) before ENTRYs (1) so a
     # slot freed at instant t is reusable by an entry at the same instant.
     events.sort(key=lambda e: (e[0], e[1]))
+    if degenerate_horizon:
+        log.info(
+            "forced a minimal hold for %d position(s) with a degenerate "
+            "horizon (outcome_checked_at <= entry)",
+            degenerate_horizon,
+        )
 
     bankroll = float(initial_bankroll)
     free_slots = slot_count
