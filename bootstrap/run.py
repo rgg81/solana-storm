@@ -146,6 +146,9 @@ def run_etl(config: Config, skip_holders: bool = False) -> None:
     pool_pairs = sorted(
         {(r.pool_address, _fmt_ts(r.graduation_time)) for r in records.values()}
     )
+    mint_slot_pairs = sorted(
+        {(r.mint, r.graduation_slot) for r in records.values()}
+    )
 
     # --- stage 2: outcome label (event-batched) ---
     outcome_rows: List[dict] = []
@@ -196,10 +199,10 @@ def run_etl(config: Config, skip_holders: bool = False) -> None:
     # and the withdraw-event probe is not part of the bootstrap query set.
     transform.merge_liquidity(records, liq_rows, withdrawn_pools=set())
 
-    # --- stage 4: bonding-curve final state (mint-batched, resilient) ---
+    # --- stage 4: bonding-curve final state ((mint,slot)-batched, resilient) ---
     bc_rows: List[dict] = []
-    for index, mint_batch in enumerate(
-        _batched(mints, config.event_batch_size)
+    for index, pair_batch in enumerate(
+        _batched(mint_slot_pairs, config.event_batch_size)
     ):
         marker = cache.read_cache(config.cache_dir, "bonding_curve", index)
         if marker is not None and marker.get("timed_out"):
@@ -208,12 +211,12 @@ def run_etl(config: Config, skip_holders: bool = False) -> None:
         try:
             bc_rows += _run_cached_stage(
                 client, meter, config, "bonding_curve",
-                queries.bonding_curve_sql(mint_batch), batch=index,
+                queries.bonding_curve_sql(pair_batch), batch=index,
             )
         except DuneTimeout:
             log.warning(
                 "bonding_curve batch %d too heavy -- curve columns NULL for %d mints",
-                index, len(mint_batch),
+                index, len(pair_batch),
             )
             cache.write_cache(
                 config.cache_dir, "bonding_curve", {"timed_out": True}, index

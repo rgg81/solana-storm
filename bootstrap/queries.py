@@ -47,6 +47,21 @@ def _sql_values_pairs(pairs: Iterable[tuple]) -> str:
     return ",\n    ".join(out)
 
 
+def _sql_values_int_pairs(pairs: Iterable[tuple]) -> str:
+    """Render (text, integer) pairs as a SQL VALUES body:
+    `(CAST('text' AS VARCHAR), <int>), ...`.
+
+    Raises ValueError if the text contains a single quote.
+    """
+    out = []
+    for text_value, int_value in pairs:
+        text = str(text_value)
+        if "'" in text:
+            raise ValueError(f"value contains a quote, refusing: {text!r}")
+        out.append(f"(CAST('{text}' AS VARCHAR), {int(int_value)})")
+    return ",\n    ".join(out)
+
+
 def graduations_sql(window_start: str, settle_cutoff: str) -> str:
     """The graduations list: PumpSwap-era migrations whose outcome is settled.
 
@@ -167,22 +182,40 @@ WHERE rn = 1
 """.strip()
 
 
-def bonding_curve_sql(mints: Iterable[str]) -> str:
-    """Bonding-curve final state: all trade events for the mint batch.
+def bonding_curve_sql(pairs: Iterable[tuple]) -> str:
+    """Bonding-curve final state: per token, the last trade event strictly
+    before its migration slot.
 
-    The merge step keeps, per mint, the last row whose evt_block_slot precedes
-    the migration slot (findings caveat 4 -- slot, not timestamp, avoids the
-    same-tx off-by-one).
+    `pairs` is a list of (mint, graduation_slot) with an integer slot. The
+    "last trade before migration" filter (findings caveat 4 -- by slot, not
+    timestamp) and the one-row-per-mint reduction are done in SQL via a
+    ROW_NUMBER window. A token has hundreds of bonding-curve trades, so
+    returning every trade is a ~hundredfold datapoint blow-up; only the final
+    pre-migration state is needed.
     """
-    mint_list = _sql_in_list(mints)
+    values = _sql_values_int_pairs(pairs)
     return f"""
-SELECT mint,
-       real_sol_reserves,
-       real_token_reserves,
-       virtual_token_reserves,
-       evt_block_slot
-FROM pumpdotfun_solana.pump_evt_tradeevent
-WHERE mint IN ({mint_list})
+WITH targets(mint, grad_slot) AS (
+    VALUES
+    {values}
+),
+trades AS (
+    SELECT t.mint,
+           e.real_sol_reserves,
+           e.real_token_reserves,
+           e.virtual_token_reserves,
+           e.evt_block_slot,
+           ROW_NUMBER() OVER (
+               PARTITION BY t.mint ORDER BY e.evt_block_slot DESC
+           ) AS rn
+    FROM pumpdotfun_solana.pump_evt_tradeevent e
+    JOIN targets t ON e.mint = t.mint
+    WHERE e.evt_block_slot < t.grad_slot
+)
+SELECT mint, real_sol_reserves, real_token_reserves,
+       virtual_token_reserves, evt_block_slot
+FROM trades
+WHERE rn = 1
 """.strip()
 
 

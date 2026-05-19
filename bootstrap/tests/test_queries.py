@@ -70,15 +70,18 @@ def test_liquidity_sql_targets_pairs_and_the_event_tables():
     assert "2026-01-10 08:00:00" in sql
 
 
-def test_bonding_curve_sql_uses_tradeevent_and_mints():
-    sql = queries.bonding_curve_sql(["MINT1", "MINT2"])
+def test_bonding_curve_sql_windows_per_mint_before_migration():
+    sql = queries.bonding_curve_sql([("MINT1", 312000000), ("MINT2", 318000000)])
     low = sql.lower()
     assert "pumpdotfun_solana.pump_evt_tradeevent" in low
     assert "real_sol_reserves" in low
     assert "real_token_reserves" in low
     assert "virtual_token_reserves" in low
     assert "evt_block_slot" in low
+    assert "row_number()" in low  # one row per mint, not every trade
+    assert "< t.grad_slot" in low  # strictly before the migration slot
     assert "'MINT1'" in sql and "'MINT2'" in sql
+    assert "312000000" in sql and "318000000" in sql
 
 
 def test_contract_flags_sql_joins_initializemint2_and_setauthority():
