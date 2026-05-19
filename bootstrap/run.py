@@ -104,7 +104,7 @@ def fetch_graduations(
     return _run_cached_stage(client, meter, config, "graduations", sql)
 
 
-def run_etl(config: Config) -> None:
+def run_etl(config: Config, skip_holders: bool = False) -> None:
     """Run the whole ETL end-to-end for the given config."""
     meter = CreditMeter()
     # Allow a pre-existing query to be reused via DUNE_QUERY_ID env var.
@@ -213,34 +213,37 @@ def run_etl(config: Config) -> None:
 
     # --- stage 7: holder distribution -- BEST-EFFORT (small batches) ---
     holder_rows: List[dict] = []
-    for index, mint_batch in enumerate(
-        _batched(mints, config.holder_batch_size)
-    ):
-        # one snapshot time per batch is an approximation: use the batch's
-        # earliest graduation + 12h, good enough for a holder snapshot.
-        batch_t0 = min(records[m].graduation_time for m in mint_batch)
-        snapshot = datetime.fromtimestamp(
-            batch_t0 + config.liquidity_snapshot_hours * 3600,
-            tz=timezone.utc,
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        marker = cache.read_cache(config.cache_dir, "holders", index)
-        if marker is not None and marker.get("timed_out"):
-            log.info("holder batch %d previously timed out -- skipping", index)
-            continue
-        try:
-            holder_rows += _run_cached_stage(
-                client, meter, config, "holders",
-                queries.holders_sql(mint_batch, snapshot_time=snapshot),
-                batch=index,
-            )
-        except DuneTimeout:
-            log.warning(
-                "holder batch %d timed out -- columns NULL for %d mints",
-                index, len(mint_batch),
-            )
-            cache.write_cache(
-                config.cache_dir, "holders", {"timed_out": True}, index
-            )
+    if skip_holders:
+        log.info("holder stage skipped (--skip-holders); holder columns NULL")
+    else:
+        for index, mint_batch in enumerate(
+            _batched(mints, config.holder_batch_size)
+        ):
+            # one snapshot time per batch is an approximation: use the batch's
+            # earliest graduation + 12h, good enough for a holder snapshot.
+            batch_t0 = min(records[m].graduation_time for m in mint_batch)
+            snapshot = datetime.fromtimestamp(
+                batch_t0 + config.liquidity_snapshot_hours * 3600,
+                tz=timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            marker = cache.read_cache(config.cache_dir, "holders", index)
+            if marker is not None and marker.get("timed_out"):
+                log.info("holder batch %d previously timed out -- skipping", index)
+                continue
+            try:
+                holder_rows += _run_cached_stage(
+                    client, meter, config, "holders",
+                    queries.holders_sql(mint_batch, snapshot_time=snapshot),
+                    batch=index,
+                )
+            except DuneTimeout:
+                log.warning(
+                    "holder batch %d timed out -- columns NULL for %d mints",
+                    index, len(mint_batch),
+                )
+                cache.write_cache(
+                    config.cache_dir, "holders", {"timed_out": True}, index
+                )
     transform.merge_holders(records, holder_rows)
 
     # --- load ---
@@ -261,6 +264,12 @@ def main() -> None:
         action="store_true",
         help="run on a tiny sample end-to-end (validates the pipeline)",
     )
+    parser.add_argument(
+        "--skip-holders",
+        action="store_true",
+        help="skip the holder-distribution stage (it times out on the free "
+        "Dune engine and would waste credits; holder columns are left NULL)",
+    )
     args = parser.parse_args()
     config = load_config(pilot=args.pilot)
     log.info(
@@ -268,7 +277,7 @@ def main() -> None:
         "PILOT" if config.is_pilot else "FULL",
         config.sample_size, config.db_path, config.cache_dir,
     )
-    run_etl(config)
+    run_etl(config, skip_holders=args.skip_holders)
 
 
 if __name__ == "__main__":
