@@ -62,10 +62,15 @@ def _looks_like_timeout(message: str) -> bool:
 class DuneClient:
     """A minimal Dune API client built on an injectable transport."""
 
-    def __init__(self, config: Config, transport: Optional[Transport] = None):
+    def __init__(
+        self,
+        config: Config,
+        transport: Optional[Transport] = None,
+        query_id: Optional[int] = None,
+    ):
         self._config = config
         self._transport: Transport = transport or _urllib_transport
-        self._query_id: Optional[int] = None  # lazily created, then reused
+        self._query_id: Optional[int] = query_id  # can be pre-seeded to skip create
 
     # --- low-level request ---------------------------------------------------
 
@@ -151,12 +156,30 @@ class DuneClient:
                 time.sleep(poll_interval)
 
     def get_results(self, execution_id: str) -> List[dict]:
-        """Fetch a completed execution's result rows."""
-        payload = self._request(
-            "GET", f"/api/v1/execution/{execution_id}/results"
-        )
-        result = payload.get("result") or {}
-        return list(result.get("rows", []))
+        """Fetch a completed execution's result rows (paginated).
+
+        The free tier caps a single response at 32,000 rows. When the result
+        set is larger, this method pages through using next_offset until all
+        rows are collected.
+        """
+        all_rows: List[dict] = []
+        offset: Optional[int] = None
+        page_size = 25000  # well under the 32k hard cap
+        while True:
+            path = (
+                f"/api/v1/execution/{execution_id}/results"
+                f"?limit={page_size}"
+                + (f"&offset={offset}" if offset is not None else "")
+            )
+            payload = self._request("GET", path)
+            result = payload.get("result") or {}
+            rows = result.get("rows", [])
+            all_rows.extend(rows)
+            next_offset = payload.get("next_offset")
+            if next_offset is None or len(rows) < page_size:
+                break
+            offset = next_offset
+        return all_rows
 
     def run_sql(self, sql: str) -> Tuple[List[dict], float]:
         """Run SQL end-to-end: (create once) -> patch -> execute -> poll ->

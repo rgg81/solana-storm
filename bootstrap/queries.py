@@ -50,13 +50,16 @@ ORDER BY call_block_time
 """.strip()
 
 
-def outcome_sql(pools: Iterable[str]) -> str:
+def outcome_sql(pools: Iterable[str], window_start: str = "2025-11-01") -> str:
     """Outcome label: the last pool reserves observed for each pool.
 
     Unions buy/sell events for the pool batch and keeps the latest event per
     pool. The graduations-list query already excludes tokens younger than the
     settle window, so the latest event is effectively the post-horizon
     (settled) state -- see the plan's self-review for the timing rationale.
+
+    window_start limits the scan to PumpSwap-era events only, which greatly
+    reduces the data scanned and avoids free-engine timeouts.
     """
     pool_list = _sql_in_list(pools)
     return f"""
@@ -65,11 +68,13 @@ WITH events AS (
            evt_block_time
     FROM pumpdotfun_solana.pump_amm_evt_buyevent
     WHERE pool IN ({pool_list})
+      AND evt_block_time >= TIMESTAMP '{window_start}'
     UNION ALL
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
            evt_block_time
     FROM pumpdotfun_solana.pump_amm_evt_sellevent
     WHERE pool IN ({pool_list})
+      AND evt_block_time >= TIMESTAMP '{window_start}'
 ),
 ranked AS (
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
@@ -88,11 +93,14 @@ WHERE rn = 1
 """.strip()
 
 
-def liquidity_sql(pools: Iterable[str]) -> str:
+def liquidity_sql(pools: Iterable[str], window_start: str = "2025-11-01") -> str:
     """Liquidity at ~T0+12h: the last pool reserves for each pool in the batch.
 
     Same buy/sell-event tables as the outcome query. snapshot timing is
     approximate (spec 5); the merge step keeps the latest event per pool.
+
+    window_start limits the scan to PumpSwap-era events only, which greatly
+    reduces the data scanned and avoids free-engine timeouts.
     """
     pool_list = _sql_in_list(pools)
     return f"""
@@ -101,11 +109,13 @@ WITH events AS (
            evt_block_time
     FROM pumpdotfun_solana.pump_amm_evt_buyevent
     WHERE pool IN ({pool_list})
+      AND evt_block_time >= TIMESTAMP '{window_start}'
     UNION ALL
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
            evt_block_time
     FROM pumpdotfun_solana.pump_amm_evt_sellevent
     WHERE pool IN ({pool_list})
+      AND evt_block_time >= TIMESTAMP '{window_start}'
 ),
 ranked AS (
     SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
@@ -158,9 +168,9 @@ WITH minted AS (
     WHERE account_mint IN ({mint_list})
 ),
 revokes AS (
-    SELECT DISTINCT account_mint AS mint
+    SELECT DISTINCT account_owned AS mint
     FROM spl_token_solana.spl_token_call_setauthority
-    WHERE account_mint IN ({mint_list})
+    WHERE account_owned IN ({mint_list})
       AND authorityType LIKE '%MintTokens%'
       AND newAuthority IS NULL
 )
