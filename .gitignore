@@ -14,3 +14,6 @@ bootstrap/data/
 __pycache__/
 *.pyc
 storm.db
+
+# Phase 3 backtest report artifacts
+model/report/
