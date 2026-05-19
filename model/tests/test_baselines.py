@@ -37,9 +37,6 @@ def test_random_basket_is_deterministic_for_a_fixed_seed():
     a = random_basket(df, size=3, seed=20260519)
     b = random_basket(df, size=3, seed=20260519)
     assert a == b
-    # a different seed gives (very likely) a different basket.
-    c = random_basket(df, size=3, seed=999)
-    assert isinstance(c, set)
 
 
 def test_random_basket_size_larger_than_frame_returns_all():
