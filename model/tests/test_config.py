@@ -12,19 +12,24 @@ def test_load_config_returns_the_spec_defaults():
     # storage
     assert cfg.db_path == "./storm.db"
     assert cfg.table_name == "historical_graduations"
-    # the survival label rule -- 5 SOL quote reserve, matches the Phase 2 ETL
+    # the (still-loaded) Phase 2 survival rule -- 5 SOL quote reserve
     assert cfg.survival_min_quote_lamports == 5_000_000_000
-    # backtest slots & sizing (spec 7 / 12 -- N in 15-30, default 20)
+    # backtest slots & sizing
     assert cfg.slot_count == 20
-    assert cfg.entry_threshold == 0.55
-    # honest costs (spec 7 / 12 -- 0.25% PumpSwap AMM fee per leg)
+    # re-tuned for the post-filter ~10% positive-class base rate (spec 8)
+    assert cfg.entry_threshold == 0.5
+    # honest costs (0.25% PumpSwap AMM fee per leg)
     assert cfg.dex_fee_rate == 0.0025
-    # calibration slice -- last 20% of each training fold (spec 5 / 12)
+    # calibration slice -- last 20% of each training fold
     assert cfg.calibration_fraction == 0.20
     # determinism
     assert cfg.random_seed == 20260519
     # report output
     assert cfg.report_dir == "model/report"
+    # NEW: garbage-filter thresholds (spec 4.2)
+    assert cfg.min_entry_liq_lamports == 1_000_000_000        # 1 SOL
+    assert cfg.max_deployer_prior_launches == 500
+    assert cfg.min_curve_sol_lamports == 10_000_000_000       # 10 SOL
 
 
 def test_load_config_applies_keyword_overrides():

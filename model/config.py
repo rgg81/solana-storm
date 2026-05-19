@@ -23,8 +23,13 @@ class Config:
 
     # --- Backtest: slots & sizing (spec 7 / 12) ---
     slot_count: int = 20  # N equal bankroll slots, spec range 15-30
-    entry_threshold: float = 0.55  # min calibrated survival score to enter
+    entry_threshold: float = 0.5  # min calibrated positive-return score to enter
     initial_bankroll: float = 100.0  # paper SOL; the equity curve is relative
+
+    # --- Garbage filter (spec 4.2) -- applied uniformly to model + baselines ---
+    min_entry_liq_lamports: int = 1_000_000_000        # 1 SOL
+    max_deployer_prior_launches: int = 500
+    min_curve_sol_lamports: int = 10_000_000_000       # 10 SOL
 
     # --- Honest costs (spec 7 / 12) ---
     dex_fee_rate: float = 0.0025  # 0.25% PumpSwap AMM swap fee, per leg
