@@ -1,5 +1,7 @@
 """Unit tests for model.config."""
 
+import dataclasses
+
 import pytest
 
 from model.config import Config, load_config
@@ -35,8 +37,8 @@ def test_load_config_applies_keyword_overrides():
 
 def test_config_is_frozen():
     cfg = load_config()
-    with pytest.raises(Exception):
-        cfg.slot_count = 1  # frozen dataclass -> FrozenInstanceError
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.slot_count = 1  # frozen dataclass forbids attribute assignment
 
 
 def test_initial_bankroll_is_positive():
