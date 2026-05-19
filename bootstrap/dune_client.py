@@ -103,11 +103,16 @@ class DuneClient:
     # --- API surface ---------------------------------------------------------
 
     def create_query(self, name: str, sql: str) -> int:
-        """Create a private Dune query; return its query_id."""
+        """Create a public Dune query; return its query_id.
+
+        Public, not private: Dune caps the number of private queries per
+        account, and the ETL's SQL contains no secrets -- it reads only
+        public on-chain data.
+        """
         payload = self._request(
             "POST",
             "/api/v1/query",
-            {"name": name, "query_sql": sql, "is_private": True},
+            {"name": name, "query_sql": sql, "is_private": False},
         )
         query_id = payload.get("query_id")
         if query_id is None:
