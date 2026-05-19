@@ -41,3 +41,13 @@ A report under `model/report/`: a markdown summary (`report.md`) plus matplotlib
 plots — the equity curve, the probability calibration curve, and the per-position
 outcome distribution. The report states the decision-gate inputs for a human to
 evaluate; it never auto-decides the gate.
+
+## Run log
+
+- Backtest run completed `2026-05-19`: `5` walk-forward folds, model basket
+  total return `-98.68%`, max drawdown `98.68%`.
+- Baseline total returns: buy-everything `-99.22%`, random `-99.99%`,
+  heuristic `-99.49%`.
+- Decision-gate inputs — beats all baselines: `True`; >= 2 regimes:
+  `True`; drawdown <= 40%: `False`.
+- The full report (markdown + plots) is under `model/report/`.
