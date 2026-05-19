@@ -86,6 +86,7 @@ def test_missing_values_flow_through_as_nan_not_imputed():
 
 def test_deployer_launch_rate_handles_zero_age_without_dividing_by_zero():
     X, _ = build_features(raw_frame())
-    # M2 has deployer_age_secs == 0; the rate must be finite (NaN), not inf.
+    # M2 has deployer_age_secs == 0; the rate must be NaN -- never inf, and
+    # never a fabricated finite value (e.g. a future fillna).
     rate = X.loc["M2", "deployer_launch_rate_per_day"]
-    assert not np.isinf(rate)
+    assert np.isnan(rate)
