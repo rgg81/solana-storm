@@ -103,6 +103,30 @@ def test_timeout_state_raises_dune_timeout():
         client.run_sql("SELECT slow")
 
 
+def test_resource_cap_failure_also_raises_dune_timeout():
+    # The free engine's per-query resource cap is treated like a timeout:
+    # both mean the batch is too heavy and the caller should skip it.
+    transport = FakeTransport(
+        [
+            (200, {"query_id": 1}),
+            (200, {}),
+            (200, {"execution_id": "EX"}),
+            (
+                200,
+                {
+                    "state": "QUERY_STATE_FAILED",
+                    "error": {"message": "Query execution has exceeded the "
+                                         "user defined maximum amount of "
+                                         "resources"},
+                },
+            ),
+        ]
+    )
+    client = DuneClient(make_config(), transport=transport)
+    with pytest.raises(DuneTimeout):
+        client.run_sql("SELECT heavy")
+
+
 def test_non_timeout_failure_raises_dune_error():
     transport = FakeTransport(
         [

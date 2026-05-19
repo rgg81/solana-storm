@@ -29,7 +29,8 @@ class DuneError(RuntimeError):
 
 
 class DuneTimeout(DuneError):
-    """A FAILED execution whose message indicates a free-engine timeout."""
+    """A FAILED execution the free engine could not finish -- a 2-minute
+    timeout or a per-query resource cap. Both mean the batch is too heavy."""
 
 
 def _urllib_transport(
@@ -53,10 +54,18 @@ def _urllib_transport(
         return exc.code, payload
 
 
-def _looks_like_timeout(message: str) -> bool:
-    """Heuristic: does a FAILED message indicate the free-engine timeout?"""
+def _is_capacity_failure(message: str) -> bool:
+    """True if a FAILED message means the free engine could not finish the
+    batch -- either the 2-minute timeout or a per-query resource cap. The
+    caller treats both the same way: the batch is too heavy, so skip it.
+    """
     low = message.lower()
-    return "execution time" in low or "timeout" in low or "timed out" in low
+    return (
+        "execution time" in low
+        or "timeout" in low
+        or "timed out" in low
+        or "maximum amount of resources" in low
+    )
 
 
 class DuneClient:
@@ -143,11 +152,12 @@ class DuneClient:
                     message = str(err.get("message", ""))
                 elif err is not None:
                     message = str(err)
-                if state == "QUERY_STATE_FAILED" and _looks_like_timeout(
+                if state == "QUERY_STATE_FAILED" and _is_capacity_failure(
                     message
                 ):
                     raise DuneTimeout(
-                        f"execution {execution_id} timed out: {message}"
+                        f"execution {execution_id} could not finish "
+                        f"(too heavy for the free engine): {message}"
                     )
                 raise DuneError(
                     f"execution {execution_id} {state}: {message}"
