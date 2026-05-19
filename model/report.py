@@ -223,6 +223,8 @@ def write_report(
     per_regime: Dict[str, float] = {}
     for fold in wf_result.folds:
         # every test token of a fold shares the fold's test month/regime.
+        if not fold.fold.test_mints:
+            continue
         sample_mint = fold.fold.test_mints[0]
         regime = regimes.loc[sample_mint]
         per_regime.setdefault(regime, 1.0)
