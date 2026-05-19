@@ -86,7 +86,8 @@ def test_u64_string_reserves_are_parsed_to_numbers():
     # the reserve columns become numeric (float), not object strings.
     for col in ("liq_base_reserve", "liq_quote_reserve",
                 "outcome_base_reserve", "outcome_quote_reserve",
-                "curve_real_sol_reserves", "curve_token_total_supply"):
+                "curve_real_sol_reserves", "curve_real_token_reserves",
+                "curve_token_total_supply"):
         assert pd.api.types.is_numeric_dtype(df[col]), f"{col} not numeric"
     # the large u64 value survives the round-trip exactly.
     assert df.loc["M2", "liq_base_reserve"] == 850938146206890.0
