@@ -27,6 +27,7 @@ def test_defaults_match_the_spec(monkeypatch):
     # findings 3.5/3.6: holder batches small, others larger.
     assert cfg.holder_batch_size == 50
     assert cfg.event_batch_size == 500
+    assert cfg.liquidity_batch_size == 150
     assert cfg.flag_batch_size == 1000
     # the project DB file and the gitignored cache dir.
     assert cfg.db_path == "./storm.db"

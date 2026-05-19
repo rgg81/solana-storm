@@ -162,16 +162,35 @@ def run_etl(config: Config, skip_holders: bool = False) -> None:
         survival_min_quote_lamports=config.survival_min_quote_lamports,
     )
 
-    # --- stage 3: liquidity at ~T0+12h (event-batched) ---
+    # --- stage 3: liquidity at ~T0+12h (event-batched, timeout-resilient) ---
+    # The T0+12h window covers a token's busy first hours, so liquidity
+    # batches are smaller than outcome batches and a batch may still time
+    # out -- on a timeout the batch's liq columns are left NULL and the run
+    # continues (liq reserves are a nullable feature).
     liq_rows: List[dict] = []
     for index, pair_batch in enumerate(
-        _batched(pool_pairs, config.event_batch_size)
+        _batched(pool_pairs, config.liquidity_batch_size)
     ):
-        liq_rows += _run_cached_stage(
-            client, meter, config, "liquidity",
-            queries.liquidity_sql(pair_batch, window_start=config.window_start),
-            batch=index,
-        )
+        marker = cache.read_cache(config.cache_dir, "liquidity", index)
+        if marker is not None and marker.get("timed_out"):
+            log.info("liquidity batch %d previously timed out -- skipping", index)
+            continue
+        try:
+            liq_rows += _run_cached_stage(
+                client, meter, config, "liquidity",
+                queries.liquidity_sql(
+                    pair_batch, window_start=config.window_start
+                ),
+                batch=index,
+            )
+        except DuneTimeout:
+            log.warning(
+                "liquidity batch %d timed out -- liq columns NULL for %d tokens",
+                index, len(pair_batch),
+            )
+            cache.write_cache(
+                config.cache_dir, "liquidity", {"timed_out": True}, index
+            )
     # withdrawn_pools is left empty: the findings heuristic treats every
     # PumpSwap-era graduation as lp_burned unless a withdraw event is seen,
     # and the withdraw-event probe is not part of the bootstrap query set.

@@ -23,7 +23,8 @@ class Config:
     outcome_settle_days: int = 16  # exclude tokens younger than this
 
     # --- Batch sizes (spike findings 3.x / 5) ---
-    event_batch_size: int = 500  # outcome / liquidity / bonding-curve queries
+    event_batch_size: int = 500  # outcome / bonding-curve queries
+    liquidity_batch_size: int = 150  # liquidity: smaller -- the T0+12h window is busy
     flag_batch_size: int = 1000  # contract-flag and deployer queries
     holder_batch_size: int = 50  # holder distribution: small, timeout-prone
 
