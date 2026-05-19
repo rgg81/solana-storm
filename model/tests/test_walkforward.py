@@ -81,6 +81,12 @@ def test_run_walkforward_produces_per_fold_results():
         assert set(fold_result.baseline_results) == {
             "buy_everything", "random_basket", "heuristic_basket"
         }
+        # Spec 4.1: test_labels is the positive_return label for the fold's
+        # test tokens -- a Series indexed by mint with integer values in {0, 1}.
+        assert isinstance(fold_result.test_labels, pd.Series)
+        assert fold_result.test_labels.name == "positive_return"
+        assert set(fold_result.test_labels.index) == set(fold_result.fold.test_mints)
+        assert fold_result.test_labels.isin([0, 1]).all()
 
 
 def test_walkforward_test_scores_are_held_out():

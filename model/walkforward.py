@@ -34,11 +34,14 @@ log = logging.getLogger("model.walkforward")
 _MIN_TRAIN_ROWS = 50
 _MIN_TEST_ROWS = 20
 
-# The 3-rule heuristic baseline's thresholds (Task 6 re-specified rules).
-# A non-serial deployer and an entry-liquidity floor; chosen to be a
-# meaningful but not extreme filter on this dataset.
-_HEURISTIC_MAX_PRIOR_LAUNCHES = 10
-_HEURISTIC_MIN_LIQ_QUOTE = 5_000_000_000.0  # 5 SOL in lamports
+# The 3-rule return-oriented heuristic baseline's thresholds (spec 7). All
+# four are pinned conservatively: a token still has to be reasonably liquid
+# at entry, deployed by a non-spam wallet with at least one prior launch,
+# and come off a curve that completed with significant capital.
+_HEURISTIC_MIN_LIQ_QUOTE_LAMPORTS = 10_000_000_000.0     # 10 SOL
+_HEURISTIC_DEPLOYER_LAUNCH_MIN = 1
+_HEURISTIC_DEPLOYER_LAUNCH_MAX = 30
+_HEURISTIC_MIN_CURVE_SOL_LAMPORTS = 70_000_000_000.0     # 70 SOL
 
 
 @dataclass
@@ -59,7 +62,7 @@ class FoldResult:
     model_result: BacktestResult
     baseline_results: Dict[str, BacktestResult]
     test_scores: pd.Series          # calibrated score per test token
-    test_labels: pd.Series          # the survived label per test token
+    test_labels: pd.Series          # positive_return label per test token (spec 4.1)
     model_basket_size: int
 
 
@@ -103,7 +106,7 @@ def _run_one_fold(
     test_df = df.loc[fold.test_mints]
 
     X_train, y_train = build_features(train_df)
-    X_test, _y_test = build_features(test_df)
+    X_test, y_test = build_features(test_df)
 
     model = train_survival_model(
         X_train, y_train,
@@ -132,8 +135,10 @@ def _run_one_fold(
         "heuristic_basket": _bt(
             heuristic_basket(
                 test_df,
-                max_prior_launches=_HEURISTIC_MAX_PRIOR_LAUNCHES,
-                min_liq_quote=_HEURISTIC_MIN_LIQ_QUOTE,
+                min_liq_quote=_HEURISTIC_MIN_LIQ_QUOTE_LAMPORTS,
+                deployer_launches_min=_HEURISTIC_DEPLOYER_LAUNCH_MIN,
+                deployer_launches_max=_HEURISTIC_DEPLOYER_LAUNCH_MAX,
+                min_curve_sol=_HEURISTIC_MIN_CURVE_SOL_LAMPORTS,
             )
         ),
     }
@@ -142,7 +147,7 @@ def _run_one_fold(
         model_result=model_result,
         baseline_results=baseline_results,
         test_scores=scores,
-        test_labels=test_df["survived"].astype(int),
+        test_labels=y_test,   # spec 4.1: positive_return label per test mint
         model_basket_size=len(model_basket),
     )
 
