@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from model.backtest import Position
+from model.backtest import BacktestResult, Position
 from model.report import (
     calibration_table,
     max_drawdown,
@@ -59,6 +59,92 @@ def test_calibration_table_bins_predicted_vs_observed():
     # each bin row has a predicted mean and an observed survival rate.
     assert {"bin_mid", "predicted_mean", "observed_rate", "count"}.issubset(
         table.columns
+    )
+
+
+def _make_backtest_result(equity_values) -> BacktestResult:
+    """Build a minimal BacktestResult with the given equity curve values."""
+    curve = pd.Series(equity_values, name="equity", dtype=float)
+    final = float(curve.iloc[-1])
+    return BacktestResult(
+        positions=[],
+        equity_curve=curve,
+        final_equity=final,
+        total_return=(final - 1.0),
+        excluded_no_liquidity=0,
+    )
+
+
+def test_decision_gate_uses_candidate_drawdown_not_model_basket(tmp_path):
+    """The drawdown_ok gate clause must read the stop-loss candidate's max
+    drawdown, not the model basket's.  A regression here would silently let
+    a high-drawdown stop-loss strategy pass the gate because of a low-dd
+    model basket (or vice versa).
+
+    Scenario:
+    - model basket: monotonically rising  -> drawdown ~ 0%
+    - stop_loss_buy_everything: peak 1.0 then drops to 0.40 -> drawdown 60%
+    Expected: drawdown_ok == False  (60% > 40% gate).
+    If the bug were present (gate reads model_dd), it would be True.
+    """
+    from model.config import load_config
+    from model.walkforward import Fold, FoldResult, WalkForwardResult
+    from model.report import write_report
+
+    # Model basket: flat rise, near-zero drawdown.
+    model_result = _make_backtest_result([1.0, 1.1, 1.2, 1.3])
+
+    # Candidate: spike then crash -- 60% drawdown (1.0 -> 0.4).
+    stop_loss_result = _make_backtest_result([1.0, 2.0, 0.8, 0.4])
+
+    # Baselines: also gently rising so beats_all=False doesn't mask the test.
+    buy_everything_result   = _make_backtest_result([1.0, 1.05, 1.10, 1.15])
+    random_basket_result    = _make_backtest_result([1.0, 1.04, 1.08, 1.12])
+    heuristic_basket_result = _make_backtest_result([1.0, 1.03, 1.06, 1.09])
+
+    fold = Fold(
+        train_months=["2026-01"],
+        test_month="2026-02",
+        train_mints=["M0"],
+        test_mints=["M1"],
+    )
+    fold_result = FoldResult(
+        fold=fold,
+        model_result=model_result,
+        baseline_results={
+            "buy_everything":          buy_everything_result,
+            "random_basket":           random_basket_result,
+            "heuristic_basket":        heuristic_basket_result,
+            "stop_loss_buy_everything": stop_loss_result,
+        },
+        test_scores=pd.Series([0.6], index=["M1"]),
+        test_labels=pd.Series([1], index=["M1"], name="positive_return"),
+        model_basket_size=1,
+    )
+    wf_result = WalkForwardResult(folds=[fold_result])
+
+    # Minimal dataframe so assign_regime doesn't blow up.
+    df = pd.DataFrame(
+        {
+            "graduation_time": [int(pd.Timestamp("2026-02-15", tz="UTC").timestamp())],
+        },
+        index=pd.Index(["M1"], name="mint"),
+    )
+
+    cfg = load_config(report_dir=str(tmp_path / "report"))
+    write_report(wf_result, df, cfg)
+
+    text = (tmp_path / "report" / "report.md").read_text()
+
+    # The gate's drawdown clause must report False: 60% > 40% threshold.
+    # Look for "Candidate max drawdown" line that contains False.
+    assert "False" in text, (
+        "drawdown_ok should be False when candidate drawdown is 60%, "
+        "but the report says True -- the gate is still reading model_dd."
+    )
+    # Also verify the candidate drawdown is reported (not just model_dd).
+    assert "stop_loss_buy_everything` max drawdown" in text, (
+        "Candidate drawdown line missing from Headline results."
     )
 
 

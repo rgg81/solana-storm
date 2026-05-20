@@ -190,6 +190,11 @@ def write_report(
         key: [f.baseline_results[key] for f in wf_result.folds]
         for key in _BASELINE_KEYS
     }
+    # stop_loss_buy_everything is the gate candidate (not in _BASELINE_KEYS).
+    stop_loss_results = [
+        f.baseline_results["stop_loss_buy_everything"]
+        for f in wf_result.folds
+    ]
 
     # pooled equity, returns, drawdown.
     model_curve = _chain_equity(model_results)
@@ -203,6 +208,9 @@ def write_report(
         key: _total_return(results)
         for key, results in baseline_results.items()
     }
+    stop_loss_total = _total_return(stop_loss_results)
+    stop_loss_curve = _chain_equity(stop_loss_results)
+    stop_loss_dd = max_drawdown(stop_loss_curve)
 
     # pooled positions + the outcome distribution.
     model_positions = _pool_positions(model_results)
@@ -241,11 +249,12 @@ def write_report(
                                 "outcome_distribution.png"))
 
     # the decision-gate inputs (stated, not auto-decided).
+    # Candidate: stop_loss_buy_everything; comparators: the 3 hold-to-horizon baselines.
     beats_all = all(
-        model_total > baseline_totals[key] for key in _BASELINE_KEYS
+        stop_loss_total > baseline_totals[key] for key in _BASELINE_KEYS
     )
     enough_regimes = len(per_regime) >= 2
-    drawdown_ok = model_dd <= _MAX_DRAWDOWN_GATE
+    drawdown_ok = stop_loss_dd <= _MAX_DRAWDOWN_GATE
 
     report_path = os.path.join(config.report_dir, "report.md")
     with open(report_path, "w", encoding="utf-8") as handle:
@@ -254,7 +263,9 @@ def write_report(
             n_folds=len(wf_result.folds),
             model_total=model_total,
             model_dd=model_dd,
+            stop_loss_dd=stop_loss_dd,
             baseline_totals=baseline_totals,
+            stop_loss_total=stop_loss_total,
             model_dist=model_dist,
             per_regime=per_regime,
             cal_table=cal_table,
@@ -285,13 +296,23 @@ def _render_markdown(**ctx) -> str:
     lines.append("")
     lines.append("## Headline results (after costs, out-of-sample)")
     lines.append("")
-    lines.append("| Basket | Total return | ")
-    lines.append("|---|---|")
-    lines.append(f"| **Model** | {ctx['model_total']:+.2%} |")
+    lines.append("| Basket | Total return | Role |")
+    lines.append("|---|---|---|")
+    lines.append(
+        f"| **stop_loss_buy_everything** | {ctx['stop_loss_total']:+.2%} | Candidate |"
+    )
     for key, value in ctx["baseline_totals"].items():
-        lines.append(f"| {key} | {value:+.2%} |")
+        lines.append(f"| {key} | {value:+.2%} | Baseline (hold-to-horizon) |")
+    lines.append(
+        f"| model_basket | {ctx['model_total']:+.2%} | Comparison only |"
+    )
     lines.append("")
-    lines.append(f"- Model basket max drawdown: {ctx['model_dd']:.2%}")
+    lines.append(
+        f"- `stop_loss_buy_everything` max drawdown: {ctx['stop_loss_dd']:.2%}"
+    )
+    lines.append(
+        f"- `model_basket` max drawdown (comparison only): {ctx['model_dd']:.2%}"
+    )
     dist = ctx["model_dist"]
     lines.append(
         f"- Model positions: {dist['count']}, "
@@ -364,11 +385,26 @@ def _render_markdown(**ctx) -> str:
     lines.append("## Decision gate")
     lines.append("")
     lines.append(
+        "**Candidate strategy:** `stop_loss_buy_everything` "
+        "(filtered universe + 50% stop-loss exit on 14 daily snapshots)."
+    )
+    lines.append("")
+    lines.append(
+        "**Baselines (hold-to-horizon):** `buy_everything`, "
+        "`random_basket`, `heuristic_basket`."
+    )
+    lines.append("")
+    lines.append(
+        "**Comparison-only:** `model_basket` (previous iteration's "
+        "calibrated positive_return classifier; not part of this gate)."
+    )
+    lines.append("")
+    lines.append(
         "The pre-committed decision gate (spec 2): reviving the parked live "
-        "component is greenlit only if the model basket beats all three "
-        "baselines, out-of-sample, after costs, across >= 2 distinct market "
-        "regimes, with a maximum drawdown <= 40%. This report states the "
-        "inputs; a human evaluates the gate."
+        "component is greenlit only if the stop-loss strategy beats all three "
+        "hold-to-horizon baselines, out-of-sample, after costs, across >= 2 "
+        "distinct market regimes, with a maximum drawdown <= 40%. This report "
+        "states the inputs; a human evaluates the gate."
     )
     lines.append("")
     lines.append(
@@ -380,8 +416,8 @@ def _render_markdown(**ctx) -> str:
         f"**{ctx['enough_regimes']}**"
     )
     lines.append(
-        f"- Max drawdown <= 40%: **{ctx['drawdown_ok']}** "
-        f"(measured {ctx['model_dd']:.2%})"
+        f"- Candidate max drawdown <= 40%: **{ctx['drawdown_ok']}** "
+        f"(`stop_loss_buy_everything` measured {ctx['stop_loss_dd']:.2%})"
     )
     lines.append("")
     gate_pass = (
