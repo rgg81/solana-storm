@@ -179,3 +179,111 @@ def test_simulator_reads_outcome_reserves_only_at_exit():
     # the same set of tokens entered (entry decisions ignore the outcome).
     assert ({p.mint for p in base.positions}
             == {p.mint for p in after.positions})
+
+
+# ---------------------------------------------------------------------------
+# Stop-loss tests
+# ---------------------------------------------------------------------------
+
+def _stop_loss_frame():
+    """Three tokens with intra-period snapshots that exercise stop-loss paths.
+
+    T1: snap_3 quote is 40% of entry -> stop-loss triggers on day 3.
+    T2: snap_5 quote is 80% of entry -> no trigger; exits at outcome.
+    T3: snap_2 is NaN, snap_3 is 30% of entry -> NaN skipped, triggers day 3.
+    """
+    base_cols = {
+        "graduation_time": [1000, 2000, 3000],
+        "graduation_slot": [400, 500, 600],
+        "outcome_base_reserve": [2.0e15, 1.0e15, 2.0e15],
+        "outcome_quote_reserve": [5.0e10, 5.0e10, 5.0e10],
+        "outcome_checked_at": [1000 + 14*86400, 2000 + 14*86400, 3000 + 14*86400],
+        "liq_base_reserve": [1.0e15, 1.0e15, 1.0e15],
+        "liq_quote_reserve": [1.0e11, 1.0e11, 1.0e11],   # entry quote
+    }
+    # Add 28 snap columns initially all-NaN, then populate the exercised cases.
+    for i in range(1, 15):
+        base_cols[f"snap_{i}_base_reserve"] = [np.nan, np.nan, np.nan]
+        base_cols[f"snap_{i}_quote_reserve"] = [np.nan, np.nan, np.nan]
+    df = pd.DataFrame(base_cols, index=pd.Index(["T1", "T2", "T3"], name="mint"))
+    # T1: snap_3 quote = 0.4e11 < 0.5 * 1.0e11 -> triggers.
+    df.loc["T1", "snap_3_quote_reserve"] = 0.4e11
+    df.loc["T1", "snap_3_base_reserve"] = 1.8e15
+    # T2: snap_5 quote = 0.8e11 -> no trigger.
+    df.loc["T2", "snap_5_quote_reserve"] = 0.8e11
+    df.loc["T2", "snap_5_base_reserve"] = 1.2e15
+    # T3: snap_2 NaN, snap_3 quote = 0.3e11 < 0.5 -> triggers on day 3, not 2.
+    df.loc["T3", "snap_3_quote_reserve"] = 0.3e11
+    df.loc["T3", "snap_3_base_reserve"] = 2.0e15
+    return df
+
+
+def test_stop_loss_threshold_none_is_back_compatible():
+    """stop_loss_threshold=None -> behavior identical to today (exits at outcome)."""
+    df = _stop_loss_frame()
+    basket = {"T1", "T2", "T3"}
+    result = run_backtest(
+        df, basket=basket, slot_count=3,
+        initial_bankroll=100.0, dex_fee_rate=0.0025,
+        stop_loss_threshold=None,
+    )
+    for pos in result.positions:
+        # Every exit time is at the outcome_checked_at (T0 + 14 days).
+        row = df.loc[pos.mint]
+        assert pos.exit_time == int(row["outcome_checked_at"])
+
+
+def test_stop_loss_triggers_at_first_below_threshold_snapshot():
+    """T1 should exit on day 3 (snap_3 quote 40% < 50% threshold)."""
+    df = _stop_loss_frame()
+    result = run_backtest(
+        df, basket={"T1"}, slot_count=1,
+        initial_bankroll=100.0, dex_fee_rate=0.0025,
+        stop_loss_threshold=0.5,
+    )
+    assert len(result.positions) == 1
+    pos = result.positions[0]
+    # Exit time is graduation_time + 3 * 86400 (day 3 snapshot).
+    assert pos.exit_time == 1000 + 3 * 86400
+
+
+def test_stop_loss_does_not_trigger_when_no_snapshot_below_threshold():
+    """T2 should exit at outcome (snap_5 at 80% of entry -- above threshold)."""
+    df = _stop_loss_frame()
+    result = run_backtest(
+        df, basket={"T2"}, slot_count=1,
+        initial_bankroll=100.0, dex_fee_rate=0.0025,
+        stop_loss_threshold=0.5,
+    )
+    pos = result.positions[0]
+    assert pos.exit_time == int(df.loc["T2", "outcome_checked_at"])
+
+
+def test_stop_loss_skips_nan_snapshots():
+    """T3: snap_2 is NaN -> skipped; trigger fires on snap_3 (the first valid below threshold)."""
+    df = _stop_loss_frame()
+    result = run_backtest(
+        df, basket={"T3"}, slot_count=1,
+        initial_bankroll=100.0, dex_fee_rate=0.0025,
+        stop_loss_threshold=0.5,
+    )
+    pos = result.positions[0]
+    assert pos.exit_time == 3000 + 3 * 86400
+
+
+def test_stop_loss_at_exact_boundary_does_not_trigger():
+    """Strict `<`: quote == threshold * entry_quote falls through to outcome exit."""
+    df = _stop_loss_frame()
+    # Override T1 to have snap_3 quote EXACTLY at the threshold (0.5 * entry).
+    # liq_quote = 1.0e11, threshold = 0.5 -> boundary = 5.0e10.
+    df.loc["T1", "snap_3_quote_reserve"] = 5.0e10  # exactly 50% of entry
+    df.loc["T1", "snap_3_base_reserve"] = 1.8e15
+    # No other snapshot below threshold -> should exit at outcome, not at snap_3.
+    result = run_backtest(
+        df, basket={"T1"}, slot_count=1,
+        initial_bankroll=100.0, dex_fee_rate=0.0025,
+        stop_loss_threshold=0.5,
+    )
+    pos = result.positions[0]
+    # Outcome time, not day-3 time.
+    assert pos.exit_time == int(df.loc["T1", "outcome_checked_at"])
