@@ -51,3 +51,31 @@ evaluate; it never auto-decides the gate.
 - Decision-gate inputs — beats all baselines: `True`; >= 2 regimes:
   `True`; drawdown <= 40%: `False`.
 - The full report (markdown + plots) is under `model/report/`.
+
+## Price-Prediction Pivot run — 2026-05-20 (`price-prediction-pivot`)
+
+Produced by commit `2460f90` (Task 6 HEAD) with the default `random_seed = 20260519`. Re-run with `python3 -m model.run` to reproduce.
+
+The pivot retargets the model from survival to a binary positive-forward-return
+label (spec `2026-05-20-price-prediction-pivot-design.md`). The dataset
+(4,755 graduations) is unchanged; a point-in-time garbage filter drops
+clearly-hopeless tokens before training so the model and every baseline see
+the same universe (filter rules in `model/filter.py`).
+
+- Pre-filter rows: 4755
+- Post-filter rows: 4125
+- Folds run: 5
+
+Total return (model basket): +0.00%
+Max drawdown (model basket): 0.00%
+
+Baselines (total return; per-token max drawdown not computed by the current report):
+- `buy_everything`   total -99.27%
+- `random_basket`    total +0.00%   (mirrors the model's 0% because its basket size equals the model basket's size, which is 0)
+- `heuristic_basket` total -99.87%
+
+Per-regime model return:
+- mania: +0.00%
+- quiet: +0.00%
+
+**Decision gate:** `FAIL`. The model basket did not beat all three baselines on total return (False): the model entered 0 positions (score never exceeded the 0.50 entry threshold), yielding +0.00% — not strictly greater than random_basket's +0.00%.
