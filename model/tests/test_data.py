@@ -57,6 +57,34 @@ def _seed(conn):
     conn.commit()
 
 
+_CREATE_SNAPSHOTS = """
+CREATE TABLE intraperiod_snapshots (
+    mint TEXT NOT NULL,
+    snapshot_index INTEGER NOT NULL,
+    snapshot_time INTEGER NOT NULL,
+    snapshot_slot INTEGER NOT NULL,
+    base_reserve TEXT,
+    quote_reserve TEXT,
+    PRIMARY KEY (mint, snapshot_index)
+)
+"""
+
+
+def _seed_snapshots(conn):
+    """Seed 2 snapshots on M1 (days 1 and 7), nothing for M2 / M3."""
+    conn.execute(_CREATE_SNAPSHOTS)
+    rows = [
+        # M1: a healthy day-1, a degraded day-7.
+        ("M1", 1, 1086400, 510, "1070000000000000", "63000000000"),
+        ("M1", 7, 1604800, 590, "1500000000000000", "30000000000"),
+    ]
+    conn.executemany(
+        "INSERT INTO intraperiod_snapshots VALUES (?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+
+
 def test_load_dataframe_returns_every_raw_column():
     conn = sqlite3.connect(":memory:")
     _seed(conn)
@@ -109,3 +137,38 @@ def test_label_and_counts_keep_integer_semantics():
     assert int(df.loc["M1", "survived"]) == 1
     assert int(df.loc["M2", "survived"]) == 0
     assert int(df.loc["M1", "deployer_prior_launches"]) == 12
+
+
+def test_load_dataframe_returns_nan_snapshots_when_table_missing():
+    """Back-compat: if intraperiod_snapshots doesn't exist, the 28 columns
+    still appear on the loaded frame as all-NaN, so callers can rely on them.
+    """
+    conn = sqlite3.connect(":memory:")
+    _seed(conn)  # historical_graduations only -- NO snapshots table
+    df = load_dataframe(conn)
+    for i in range(1, 15):
+        for kind in ("base", "quote"):
+            col = f"snap_{i}_{kind}_reserve"
+            assert col in df.columns, f"{col} missing"
+            assert df[col].isna().all(), f"{col} should be all NaN"
+
+
+def test_load_dataframe_joins_snapshot_rows_when_present():
+    """When intraperiod_snapshots exists, the 28 columns are populated where
+    data is present and NaN elsewhere. Row M1 has snap 1 and 7 only."""
+    conn = sqlite3.connect(":memory:")
+    _seed(conn)
+    _seed_snapshots(conn)
+    df = load_dataframe(conn)
+    # M1's snap 1 + 7 are populated.
+    assert df.loc["M1", "snap_1_base_reserve"] == 1070000000000000.0
+    assert df.loc["M1", "snap_1_quote_reserve"] == 63000000000.0
+    assert df.loc["M1", "snap_7_base_reserve"] == 1500000000000000.0
+    assert df.loc["M1", "snap_7_quote_reserve"] == 30000000000.0
+    # M1's other snapshots are NaN.
+    assert np.isnan(df.loc["M1", "snap_2_base_reserve"])
+    assert np.isnan(df.loc["M1", "snap_14_quote_reserve"])
+    # M2's and M3's snapshots are all NaN (no rows seeded).
+    for i in range(1, 15):
+        assert np.isnan(df.loc["M2", f"snap_{i}_quote_reserve"])
+        assert np.isnan(df.loc["M3", f"snap_{i}_base_reserve"])

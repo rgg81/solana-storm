@@ -67,6 +67,12 @@ def load_dataframe(conn: sqlite3.Connection) -> pd.DataFrame:
     so every downstream consumer (notably the walk-forward harness) gets a
     chronologically ordered frame. TEXT u64-string reserve columns are
     parsed to numeric; a SQL NULL stays NaN.
+
+    When the intraperiod_snapshots table is present, also LEFT-JOIN 14 daily
+    snapshots per mint into 28 paired columns `snap_{i}_base_reserve` and
+    `snap_{i}_quote_reserve` for i in 1..14. Missing snapshots load as NaN.
+    When the table is missing, the 28 columns appear as all-NaN so callers
+    can rely on a stable column set (spec 4.3).
     """
     select = ", ".join(RAW_COLUMNS)
     df = pd.read_sql_query(
@@ -77,7 +83,63 @@ def load_dataframe(conn: sqlite3.Connection) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.set_index("mint")
     df = df.sort_values("graduation_time", kind="stable")
+
+    # LEFT-JOIN intraperiod snapshots if the table exists.
+    snap_df = _load_intraperiod_snapshots(conn, mints=list(df.index))
+    df = df.join(snap_df, how="left")
+
     return df
+
+
+def _load_intraperiod_snapshots(
+    conn: sqlite3.Connection, mints: list[str]
+) -> pd.DataFrame:
+    """Return a DataFrame indexed by mint with 28 snap_*_*_reserve columns.
+
+    If the intraperiod_snapshots table is missing OR has no rows for the
+    given mints, every column is NaN. Otherwise rows are pivoted: each
+    (mint, snapshot_index) becomes snap_{i}_base_reserve / snap_{i}_quote_reserve.
+    """
+    columns = [
+        f"snap_{i}_{kind}_reserve"
+        for i in range(1, 15)
+        for kind in ("base", "quote")
+    ]
+    empty = pd.DataFrame(
+        index=pd.Index(mints, name="mint"), columns=columns, dtype=float
+    )
+    # Existence check.
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='intraperiod_snapshots'"
+    )
+    if cur.fetchone() is None:
+        return empty
+
+    raw = pd.read_sql_query(
+        "SELECT mint, snapshot_index, base_reserve, quote_reserve "
+        "FROM intraperiod_snapshots",
+        conn,
+    )
+    if raw.empty:
+        return empty
+
+    # u64-string -> numeric.
+    raw["base_reserve"] = pd.to_numeric(raw["base_reserve"], errors="coerce")
+    raw["quote_reserve"] = pd.to_numeric(raw["quote_reserve"], errors="coerce")
+
+    # Pivot to one row per mint with snap_{i}_{kind} columns.
+    pivoted = raw.pivot(
+        index="mint", columns="snapshot_index", values=["base_reserve", "quote_reserve"]
+    )
+    pivoted.columns = [
+        f"snap_{int(idx)}_{kind.split('_')[0]}_reserve"
+        for kind, idx in pivoted.columns
+    ]
+    # Align to the requested mints, fill missing.
+    aligned = empty.copy()
+    aligned.update(pivoted)
+    return aligned
 
 
 def load_graduations(config: Config) -> pd.DataFrame:
