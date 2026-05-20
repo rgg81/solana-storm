@@ -186,6 +186,8 @@ def intraperiod_snapshot_sql(
     pairs: Iterable[tuple],
     snapshot_day_offset: int,
     window_start: str = "2025-11-01",
+    static_lower: str = "",
+    static_upper: str = "",
 ) -> str:
     """Pool reserves at the latest trade inside [T0+Nd, T0+(N+1)d].
 
@@ -204,9 +206,31 @@ def intraperiod_snapshot_sql(
             graduation, in [T0+Nd, T0+(N+1)d].
         window_start: ISO date floor for partition pruning on the (very
             large) event tables.
+        static_lower: optional static lower-bound timestamp string
+            'YYYY-MM-DD HH:MM:SS' — when set, adds a tight static
+            `e.evt_block_time >= TIMESTAMP '<static_lower>'` that lets
+            the query engine skip partitions before the batch's earliest
+            window. Derived from the batch's min grad_time + N days.
+        static_upper: optional static upper-bound timestamp string
+            'YYYY-MM-DD HH:MM:SS' — when set, adds `e.evt_block_time <=
+            TIMESTAMP '<static_upper>'` to prune partitions after the
+            batch's latest window. Derived from max grad_time + (N+1) days.
     """
-    values = _sql_values_pairs(pairs)
+    pairs_list = list(pairs)
+    values = _sql_values_pairs(pairs_list)
     next_day = snapshot_day_offset + 1
+
+    lower_clause = (
+        f"      AND e.evt_block_time >= TIMESTAMP '{static_lower}'\n"
+        if static_lower
+        else ""
+    )
+    upper_clause = (
+        f"      AND e.evt_block_time <= TIMESTAMP '{static_upper}'\n"
+        if static_upper
+        else ""
+    )
+
     return f"""
 WITH targets(pool, grad_time) AS (
     VALUES
@@ -218,7 +242,7 @@ events AS (
     FROM pumpdotfun_solana.pump_amm_evt_buyevent e
     JOIN targets t ON e.pool = t.pool
     WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
-      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
+{lower_clause}{upper_clause}      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
                                AND t.grad_time + INTERVAL '{next_day}' DAY
     UNION ALL
     SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
@@ -226,7 +250,7 @@ events AS (
     FROM pumpdotfun_solana.pump_amm_evt_sellevent e
     JOIN targets t ON e.pool = t.pool
     WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
-      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
+{lower_clause}{upper_clause}      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
                                AND t.grad_time + INTERVAL '{next_day}' DAY
 ),
 ranked AS (
