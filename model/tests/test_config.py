@@ -30,6 +30,8 @@ def test_load_config_returns_the_spec_defaults():
     assert cfg.min_entry_liq_lamports == 1_000_000_000        # 1 SOL
     assert cfg.max_deployer_prior_launches == 500
     assert cfg.min_curve_sol_lamports == 10_000_000_000       # 10 SOL
+    # NEW: stop-loss strategy threshold (spec 10)
+    assert cfg.stop_loss_threshold == 0.5
 
 
 def test_load_config_applies_keyword_overrides():

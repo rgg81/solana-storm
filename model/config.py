@@ -31,6 +31,9 @@ class Config:
     max_deployer_prior_launches: int = 500
     min_curve_sol_lamports: int = 10_000_000_000       # 10 SOL
 
+    # --- Stop-loss strategy (spec 10) ---
+    stop_loss_threshold: float = 0.5  # exit if quote-reserve falls below 50% of entry
+
     # --- Honest costs (spec 7 / 12) ---
     dex_fee_rate: float = 0.0025  # 0.25% PumpSwap AMM swap fee, per leg
 
