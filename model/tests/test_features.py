@@ -120,3 +120,14 @@ def test_abandoned_token_has_positive_return_zero():
     """outcome 0/0 -> exit_price NaN -> NaN comparison False -> label 0."""
     _X, y = build_features(raw_frame())
     assert y.loc["M2"] == 0
+
+
+def test_intraperiod_snapshot_columns_are_in_leakage_forbidden():
+    """Spec 11: all 28 snap_*_*_reserve columns are future data; never features."""
+    for i in range(1, 15):
+        assert f"snap_{i}_base_reserve" in LEAKAGE_FORBIDDEN, (
+            f"snap_{i}_base_reserve missing from LEAKAGE_FORBIDDEN"
+        )
+        assert f"snap_{i}_quote_reserve" in LEAKAGE_FORBIDDEN, (
+            f"snap_{i}_quote_reserve missing from LEAKAGE_FORBIDDEN"
+        )

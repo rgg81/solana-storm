@@ -23,15 +23,21 @@ import pandas as pd
 # The label the model predicts.
 LABEL_COLUMN = "positive_return"
 
-# Columns that must NEVER appear in the feature matrix -- they are future
-# data (the outcome reserves) or the (still-loaded but no-longer-label)
-# survived column or the label itself. The no-leakage test checks this list.
+# Columns that must NEVER appear in the feature matrix -- future data
+# (outcome reserves, intra-period snapshots) or the label itself. The
+# no-leakage test enforces this list. The 28 snap_* columns are added
+# pre-emptively for the stop-loss strategy (spec 4.3 / 11) even though
+# they're consumed only by the backtest's exit logic, not by any model.
 LEAKAGE_FORBIDDEN: List[str] = [
     "positive_return",
     "survived",
     "outcome_base_reserve",
     "outcome_quote_reserve",
     "outcome_checked_at",
+] + [
+    f"snap_{i}_{kind}_reserve"
+    for i in range(1, 15)
+    for kind in ("base", "quote")
 ]
 
 # Raw point-in-time columns passed straight through as features.
