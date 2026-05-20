@@ -45,7 +45,14 @@ def wf_frame(per_month=60, seed=0):
             )
             mints.append(f"M{mi}_{k}")
     df = pd.DataFrame(rows, index=pd.Index(mints, name="mint"))
-    return df.sort_values("graduation_time", kind="stable")
+    df = df.sort_values("graduation_time", kind="stable")
+    # Add 28 NaN snapshot columns so backtest's stop-loss path is reachable
+    # (with all-NaN it falls through to the outcome exit; behavior matches
+    # the no-stop-loss buy_everything baseline).
+    for i in range(1, 15):
+        df[f"snap_{i}_base_reserve"] = float("nan")
+        df[f"snap_{i}_quote_reserve"] = float("nan")
+    return df
 
 
 def test_build_folds_makes_expanding_windows():
@@ -79,8 +86,13 @@ def test_run_walkforward_produces_per_fold_results():
         # each fold ran the model and the three baselines.
         assert fold_result.model_result is not None
         assert set(fold_result.baseline_results) == {
-            "buy_everything", "random_basket", "heuristic_basket"
+            "buy_everything", "random_basket", "heuristic_basket",
+            "stop_loss_buy_everything",
         }
+        # NEW (spec 6): the stop-loss strategy is a 4th key in baseline_results.
+        assert "stop_loss_buy_everything" in fold_result.baseline_results, (
+            "stop_loss_buy_everything missing from fold's baseline_results"
+        )
         # Spec 4.1: test_labels is the positive_return label for the fold's
         # test tokens -- a Series indexed by mint with integer values in {0, 1}.
         assert isinstance(fold_result.test_labels, pd.Series)

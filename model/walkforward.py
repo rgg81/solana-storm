@@ -118,11 +118,12 @@ def _run_one_fold(
     # the model basket: test tokens whose calibrated score clears the gate.
     model_basket = set(scores.index[scores >= config.entry_threshold])
 
-    def _bt(basket):
+    def _bt(basket, stop_loss_threshold=None):
         return run_backtest(
             test_df, basket=basket, slot_count=config.slot_count,
             initial_bankroll=config.initial_bankroll,
             dex_fee_rate=config.dex_fee_rate,
+            stop_loss_threshold=stop_loss_threshold,
         )
 
     model_result = _bt(model_basket)
@@ -140,6 +141,11 @@ def _run_one_fold(
                 deployer_launches_max=_HEURISTIC_DEPLOYER_LAUNCH_MAX,
                 min_curve_sol=_HEURISTIC_MIN_CURVE_SOL_LAMPORTS,
             )
+        ),
+        # NEW (spec 6): same membership as buy_everything, stop-loss exit.
+        "stop_loss_buy_everything": _bt(
+            buy_everything(test_df),
+            stop_loss_threshold=config.stop_loss_threshold,
         ),
     }
     return FoldResult(
