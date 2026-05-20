@@ -79,3 +79,41 @@ Per-regime model return:
 - quiet: +0.00%
 
 **Decision gate:** `FAIL`. The model basket did not beat all three baselines on total return (False): the model entered 0 positions (score never exceeded the 0.50 entry threshold), yielding +0.00% — not strictly greater than random_basket's +0.00%.
+
+## Stop-Loss Strategy run — 2026-05-21 (`stop-loss-strategy`)
+
+A no-ML iteration: hold every token in the filtered universe (the pivot's
+`buy_everything` membership) and exit on the first daily snapshot where pool
+quote-reserve drops below 50% of entry quote-reserve. Backed by a new
+`intraperiod_snapshots` table populated from Dune Analytics (41,486 rows
+across 4,672 distinct mints; spec
+`2026-05-20-stop-loss-strategy-design.md`).
+
+Produced by `python3 -m model.run` against the source state of THIS commit
+(Task 10 HEAD on the `stop-loss-strategy` branch), with
+`random_seed = 20260519` and `stop_loss_threshold = 0.5`. The Dune ETL run
+consumed 494.89 credits (~20% of the 2,500/month free tier). Re-run with
+`python3 -m model.run` against the populated `intraperiod_snapshots` table
+to reproduce.
+
+- Pre-filter rows: 4755
+- Post-filter rows: 4125
+- Folds run: 5
+
+Candidate: `stop_loss_buy_everything`
+- Total return: -99.53%
+- Max drawdown: 99.53%
+
+Baselines (hold-to-horizon):
+- `buy_everything`   total -99.27%   max_dd not computed
+- `random_basket`    total +0.00%   max_dd not computed
+- `heuristic_basket` total -99.87%   max_dd not computed
+
+Comparison only (not in the gate's baseline set):
+- `model_basket` (pivot's calibrated positive_return) total +0.00%   max_dd 0.00%
+
+Per-regime candidate return:
+- mania (Feb / Mar / Apr): -88.83%
+- quiet (Nov / Dec / Jan / May): -95.75%
+
+**Decision gate:** `FAIL`. Did not beat all three baselines on total return (loses to `random_basket`'s +0.00% vs candidate's -99.53%) and max drawdown 99.53% exceeded the 40% ceiling.

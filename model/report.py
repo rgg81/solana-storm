@@ -226,18 +226,20 @@ def write_report(
         if len(all_scores) > 0 else pd.DataFrame()
     )
 
-    # per-regime model total return.
+    # per-regime candidate (stop_loss_buy_everything) total return.
     regimes = assign_regime(df)
-    per_regime: Dict[str, float] = {}
+    per_regime_candidate: Dict[str, float] = {}
     for fold in wf_result.folds:
         # every test token of a fold shares the fold's test month/regime.
         if not fold.fold.test_mints:
             continue
         sample_mint = fold.fold.test_mints[0]
         regime = regimes.loc[sample_mint]
-        per_regime.setdefault(regime, 1.0)
-        per_regime[regime] *= (1.0 + fold.model_result.total_return)
-    per_regime = {k: v - 1.0 for k, v in per_regime.items()}
+        per_regime_candidate.setdefault(regime, 1.0)
+        per_regime_candidate[regime] *= (
+            1.0 + fold.baseline_results["stop_loss_buy_everything"].total_return
+        )
+    per_regime_candidate = {k: v - 1.0 for k, v in per_regime_candidate.items()}
 
     # plots.
     _plot_equity(model_curve, baseline_curves,
@@ -253,7 +255,7 @@ def write_report(
     beats_all = all(
         stop_loss_total > baseline_totals[key] for key in _BASELINE_KEYS
     )
-    enough_regimes = len(per_regime) >= 2
+    enough_regimes = len(per_regime_candidate) >= 2
     drawdown_ok = stop_loss_dd <= _MAX_DRAWDOWN_GATE
 
     report_path = os.path.join(config.report_dir, "report.md")
@@ -267,7 +269,7 @@ def write_report(
             baseline_totals=baseline_totals,
             stop_loss_total=stop_loss_total,
             model_dist=model_dist,
-            per_regime=per_regime,
+            per_regime=per_regime_candidate,
             cal_table=cal_table,
             beats_all=beats_all,
             enough_regimes=enough_regimes,
@@ -322,10 +324,10 @@ def _render_markdown(**ctx) -> str:
         f"total-loss positions {dist['total_loss_count']}"
     )
     lines.append("")
-    lines.append("## Per-regime model return")
+    lines.append("## Per-regime candidate return")
     lines.append("")
     if ctx["per_regime"]:
-        lines.append("| Regime | Model total return |")
+        lines.append("| Regime | Candidate (`stop_loss_buy_everything`) total return |")
         lines.append("|---|---|")
         for regime, value in sorted(ctx["per_regime"].items()):
             lines.append(f"| {regime} | {value:+.2%} |")
