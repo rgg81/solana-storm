@@ -1,8 +1,9 @@
-"""The Phase 3 backtest orchestrator.
+"""The price-prediction-pivot backtest orchestrator.
 
-Wires: config -> load historical_graduations into a DataFrame -> run the
-expanding-window walk-forward backtest (the calibrated survival model and the
-three baselines) -> write the report (markdown + plots) under the report dir.
+Wires: config -> load historical_graduations into a DataFrame -> apply the
+point-in-time garbage filter -> run the expanding-window walk-forward
+backtest (the calibrated positive_return model and the three baselines) ->
+write the report (markdown + plots) under the report dir.
 
 Usage:
     python3 -m model.run
@@ -16,6 +17,7 @@ import logging
 
 from model.config import load_config
 from model.data import load_graduations
+from model.filter import filter_garbage
 from model.report import write_report
 from model.walkforward import run_walkforward
 
@@ -25,7 +27,7 @@ log = logging.getLogger("model.run")
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="solana-storm Phase 3 survival-model walk-forward backtest"
+        description="solana-storm price-prediction-pivot walk-forward backtest"
     )
     parser.add_argument(
         "--slots", type=int, default=None,
@@ -33,7 +35,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--entry-threshold", type=float, default=None,
-        help="min calibrated survival score to enter (default: 0.55)",
+        help="min calibrated positive_return score to enter (default: 0.5)",
     )
     parser.add_argument(
         "--db", type=str, default=None,
@@ -54,10 +56,10 @@ def main() -> None:
         "loading historical_graduations from %s", config.db_path
     )
     df = load_graduations(config)
-    log.info(
-        "loaded %d graduations; survived split %s",
-        len(df), df["survived"].value_counts().to_dict(),
-    )
+    log.info("loaded %d graduations (pre-filter)", len(df))
+
+    df = filter_garbage(df, config)  # spec 4.2: same universe for all pickers
+    log.info("post-filter: %d rows", len(df))
 
     log.info(
         "running walk-forward backtest: slots=%d entry_threshold=%.2f "
