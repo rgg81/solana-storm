@@ -130,3 +130,63 @@ def existing_mints(conn: sqlite3.Connection) -> Set[str]:
     """The set of mints already in historical_graduations."""
     cur = conn.execute("SELECT mint FROM historical_graduations")
     return {row[0] for row in cur.fetchall()}
+
+
+_SNAPSHOTS_CREATE_SQL = """
+CREATE TABLE IF NOT EXISTS intraperiod_snapshots (
+    mint            TEXT NOT NULL,
+    snapshot_index  INTEGER NOT NULL,
+    snapshot_time   INTEGER NOT NULL,
+    snapshot_slot   INTEGER NOT NULL,
+    base_reserve    TEXT,
+    quote_reserve   TEXT,
+    PRIMARY KEY (mint, snapshot_index)
+)
+""".strip()
+
+_SNAPSHOTS_INSERT_SQL = (
+    "INSERT INTO intraperiod_snapshots "
+    "(mint, snapshot_index, snapshot_time, snapshot_slot, base_reserve, quote_reserve) "
+    "VALUES (?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT(mint, snapshot_index) DO NOTHING"
+)
+
+
+def create_snapshots_table(conn: sqlite3.Connection) -> None:
+    """Create intraperiod_snapshots if it does not already exist."""
+    conn.execute(_SNAPSHOTS_CREATE_SQL)
+
+
+def insert_snapshots(conn: sqlite3.Connection, records) -> None:
+    """Idempotently insert SnapshotRecord rows; existing rows are kept.
+
+    Every record's `mint` MUST be set (not None). Records produced by
+    `parse_snapshots` have `mint = None` and require the orchestrator's
+    pool_address -> mint remap before calling this function. Any None
+    mint raises ValueError to prevent silent wrong-column inserts.
+    """
+    for r in records:
+        if r.mint is None:
+            raise ValueError(
+                f"SnapshotRecord.mint is None for pool_address={r.pool_address!r}; "
+                "orchestrator must remap pool_address to mint before insert."
+            )
+    rows = [
+        (r.mint, r.snapshot_index, r.snapshot_time, r.snapshot_slot,
+         r.base_reserve, r.quote_reserve)
+        for r in records
+    ]
+    conn.executemany(_SNAPSHOTS_INSERT_SQL, rows)
+    conn.commit()
+
+
+def existing_snapshots(conn: sqlite3.Connection) -> dict:
+    """Return dict[mint, set[int]] of (mint, snapshot_index) pairs already
+    in the table -- used by the orchestrator to resume after a crash."""
+    cur = conn.execute(
+        "SELECT mint, snapshot_index FROM intraperiod_snapshots"
+    )
+    result: dict = {}
+    for mint, idx in cur:
+        result.setdefault(mint, set()).add(int(idx))
+    return result

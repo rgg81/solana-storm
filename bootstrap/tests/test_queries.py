@@ -124,3 +124,38 @@ def test_in_list_rejects_a_value_with_a_quote():
     # defence against a malformed address breaking the SQL string.
     with pytest.raises(ValueError):
         queries._sql_in_list(["ok", "ev'il"])
+
+
+def test_intraperiod_snapshot_sql_contains_pool_pair_and_day_offsets():
+    """The template should declare the (pool, grad_time) pairs in a VALUES
+    clause and BETWEEN the trade-time on (grad + N day, grad + (N+1) day)."""
+    from bootstrap.queries import intraperiod_snapshot_sql
+    sql = intraperiod_snapshot_sql(
+        pairs=[("POOL_A", "2026-01-01 00:00:00")],
+        snapshot_day_offset=3,
+        window_start="2025-11-01",
+    )
+    assert "POOL_A" in sql
+    assert "2026-01-01 00:00:00" in sql
+    assert "INTERVAL '3' DAY" in sql
+    assert "INTERVAL '4' DAY" in sql
+    assert "2025-11-01" in sql
+    # Confirm the same buy/sell event union + ranked CTE structure as outcome_sql.
+    assert "pump_amm_evt_buyevent" in sql
+    assert "pump_amm_evt_sellevent" in sql
+    assert "ROW_NUMBER() OVER" in sql
+
+
+def test_intraperiod_snapshot_sql_returns_the_expected_columns():
+    """SELECT clause must yield pool_address, base_reserve, quote_reserve,
+    event_time, event_slot -- matching parse_snapshots' expectation."""
+    from bootstrap.queries import intraperiod_snapshot_sql
+    sql = intraperiod_snapshot_sql(
+        pairs=[("POOL_A", "2026-01-01 00:00:00")],
+        snapshot_day_offset=1,
+    )
+    assert "AS pool_address" in sql
+    assert "AS base_reserve" in sql
+    assert "AS quote_reserve" in sql
+    assert "AS event_time" in sql
+    assert "AS event_slot" in sql

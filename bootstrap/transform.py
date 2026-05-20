@@ -59,6 +59,25 @@ class GraduationRecord:
     deployer_age_secs: Optional[int] = None
 
 
+@dataclass
+class SnapshotRecord:
+    """One row of intraperiod_snapshots -- a per-day pool reserve sample.
+
+    `mint` is None when produced by `parse_snapshots` (the Dune row is
+    keyed by pool_address, not mint). The orchestrator MUST remap
+    pool_address -> mint and set `record.mint` before calling
+    `insert_snapshots`. `insert_snapshots` enforces this with a ValueError
+    on any None mint.
+    """
+    mint: Optional[str]
+    snapshot_index: int               # 1..14
+    snapshot_time: int                # Unix seconds
+    snapshot_slot: int                # Solana slot of the latest swap event
+    base_reserve: Optional[str]       # u64 as str; None if no event in window
+    quote_reserve: Optional[str]      # u64 as str; None if no event in window
+    pool_address: Optional[str] = None
+
+
 def parse_dune_time(value: str) -> int:
     """Parse a Dune timestamp string to Unix seconds (UTC).
 
@@ -91,6 +110,31 @@ def parse_graduations(rows: List[dict]) -> Dict[str, GraduationRecord]:
             graduation_time=parse_dune_time(row["graduation_time"]),
             graduation_slot=int(row["graduation_slot"]),
         )
+    return records
+
+
+def parse_snapshots(
+    rows: List[dict], snapshot_index: int
+) -> List[SnapshotRecord]:
+    """Parse Dune-shaped snapshot rows into SnapshotRecords.
+
+    Dune rows are pool-keyed. This function stores the pool address in
+    `record.pool_address` and leaves `record.mint = None`. The orchestrator
+    is responsible for remapping pool_address -> mint via the
+    historical_graduations table and setting `record.mint` before calling
+    `insert_snapshots` (which raises ValueError on any None mint).
+    """
+    records: List[SnapshotRecord] = []
+    for row in rows:
+        records.append(SnapshotRecord(
+            mint=None,
+            snapshot_index=snapshot_index,
+            snapshot_time=parse_dune_time(row["event_time"]),
+            snapshot_slot=int(row["event_slot"]),
+            base_reserve=str(row["base_reserve"]) if row.get("base_reserve") is not None else None,
+            quote_reserve=str(row["quote_reserve"]) if row.get("quote_reserve") is not None else None,
+            pool_address=str(row["pool_address"]),
+        ))
     return records
 
 

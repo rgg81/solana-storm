@@ -172,3 +172,85 @@ def test_create_table_sql_has_the_spec_columns():
         "top20_concentration",
     ):
         assert nullable in low
+
+
+def test_create_snapshots_table_is_idempotent():
+    import sqlite3
+    from bootstrap.load import create_snapshots_table
+    conn = sqlite3.connect(":memory:")
+    create_snapshots_table(conn)
+    create_snapshots_table(conn)  # second call should not raise
+    # Confirm schema.
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+        " AND name='intraperiod_snapshots'"
+    )
+    assert cur.fetchone() is not None
+
+
+def test_insert_snapshots_writes_rows_keyed_by_pool_and_mint():
+    """insert_snapshots takes mint-keyed records; we look them up via the
+    historical_graduations table (mint <-> pool_address)."""
+    import sqlite3
+    from bootstrap.load import create_snapshots_table, insert_snapshots
+    from bootstrap.transform import SnapshotRecord
+    conn = sqlite3.connect(":memory:")
+    create_snapshots_table(conn)
+    records = [
+        SnapshotRecord(
+            mint="M1", snapshot_index=1, snapshot_time=1086400,
+            snapshot_slot=510, base_reserve="1070000000000000",
+            quote_reserve="63000000000",
+        ),
+        SnapshotRecord(
+            mint="M2", snapshot_index=1, snapshot_time=2086400,
+            snapshot_slot=511, base_reserve=None, quote_reserve=None,
+        ),
+    ]
+    insert_snapshots(conn, records)
+    rows = conn.execute(
+        "SELECT mint, snapshot_index, base_reserve, quote_reserve "
+        "FROM intraperiod_snapshots ORDER BY mint"
+    ).fetchall()
+    assert rows == [
+        ("M1", 1, "1070000000000000", "63000000000"),
+        ("M2", 1, None, None),
+    ]
+
+
+def test_existing_snapshots_returns_indices_already_loaded_per_mint():
+    """existing_snapshots returns a dict[mint, set[int]] for resumability."""
+    import sqlite3
+    from bootstrap.load import (
+        create_snapshots_table, existing_snapshots, insert_snapshots,
+    )
+    from bootstrap.transform import SnapshotRecord
+    conn = sqlite3.connect(":memory:")
+    create_snapshots_table(conn)
+    insert_snapshots(conn, [
+        SnapshotRecord("M1", 1, 1, 1, "100", "10"),
+        SnapshotRecord("M1", 3, 1, 1, "100", "10"),
+        SnapshotRecord("M2", 2, 1, 1, "100", "10"),
+    ])
+    loaded = existing_snapshots(conn)
+    assert loaded == {"M1": {1, 3}, "M2": {2}}
+
+
+def test_insert_snapshots_raises_if_any_record_has_none_mint():
+    """The orchestrator's pool->mint remap is mandatory; a record with
+    mint=None must NOT silently insert (would corrupt the primary key)."""
+    import sqlite3
+    import pytest
+    from bootstrap.load import create_snapshots_table, insert_snapshots
+    from bootstrap.transform import SnapshotRecord
+    conn = sqlite3.connect(":memory:")
+    create_snapshots_table(conn)
+    records = [
+        SnapshotRecord(
+            mint=None, snapshot_index=1, snapshot_time=1,
+            snapshot_slot=1, base_reserve="100", quote_reserve="10",
+            pool_address="POOL_A",
+        ),
+    ]
+    with pytest.raises(ValueError, match="orchestrator must remap"):
+        insert_snapshots(conn, records)

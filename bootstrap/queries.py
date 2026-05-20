@@ -182,6 +182,71 @@ WHERE rn = 1
 """.strip()
 
 
+def intraperiod_snapshot_sql(
+    pairs: Iterable[tuple],
+    snapshot_day_offset: int,
+    window_start: str = "2025-11-01",
+) -> str:
+    """Pool reserves at the latest trade inside [T0+Nd, T0+(N+1)d].
+
+    The caller MUST ensure `len(pairs) >= 1`; an empty list produces
+    invalid SQL (a bare `VALUES` with no rows).
+
+    Same shape as `outcome_sql` and `liquidity_sql`: takes (pool, grad_time)
+    pairs, returns one row per pool with the LATEST swap event's resulting
+    reserves inside the per-token day-N window. A pool with no trade in
+    that window does not appear in the result -- the orchestrator inserts
+    NULL reserves so the row still exists.
+
+    Args:
+        pairs: list of (pool_address, graduation_time_string) pairs.
+        snapshot_day_offset: integer N >= 1; the snapshot is day N after
+            graduation, in [T0+Nd, T0+(N+1)d].
+        window_start: ISO date floor for partition pruning on the (very
+            large) event tables.
+    """
+    values = _sql_values_pairs(pairs)
+    next_day = snapshot_day_offset + 1
+    return f"""
+WITH targets(pool, grad_time) AS (
+    VALUES
+    {values}
+),
+events AS (
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time, e.evt_block_slot
+    FROM pumpdotfun_solana.pump_amm_evt_buyevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
+                               AND t.grad_time + INTERVAL '{next_day}' DAY
+    UNION ALL
+    SELECT t.pool, e.pool_base_token_reserves, e.pool_quote_token_reserves,
+           e.evt_block_time, e.evt_block_slot
+    FROM pumpdotfun_solana.pump_amm_evt_sellevent e
+    JOIN targets t ON e.pool = t.pool
+    WHERE e.evt_block_time >= TIMESTAMP '{window_start}'
+      AND e.evt_block_time BETWEEN t.grad_time + INTERVAL '{snapshot_day_offset}' DAY
+                               AND t.grad_time + INTERVAL '{next_day}' DAY
+),
+ranked AS (
+    SELECT pool, pool_base_token_reserves, pool_quote_token_reserves,
+           evt_block_time, evt_block_slot,
+           ROW_NUMBER() OVER (
+               PARTITION BY pool ORDER BY evt_block_time DESC
+           ) AS rn
+    FROM events
+)
+SELECT pool                       AS pool_address,
+       pool_base_token_reserves   AS base_reserve,
+       pool_quote_token_reserves  AS quote_reserve,
+       evt_block_time             AS event_time,
+       evt_block_slot             AS event_slot
+FROM ranked
+WHERE rn = 1
+""".strip()
+
+
 def bonding_curve_sql(pairs: Iterable[tuple]) -> str:
     """Bonding-curve final state: per token, the last trade event strictly
     before its migration slot.

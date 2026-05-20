@@ -244,3 +244,42 @@ def test_merge_holders_populates_when_present_and_skips_when_absent():
     assert recs["MINT_A"].top10_concentration == 0.42
     # MINT_B not in the holder rows -> stays None (the NULL fallback).
     assert recs["MINT_B"].visible_holder_count is None
+
+
+def test_parse_snapshots_builds_typed_records():
+    from bootstrap.transform import parse_snapshots
+    rows = [
+        {
+            "pool_address": "POOL_A",
+            "base_reserve": "1070000000000000",
+            "quote_reserve": "63000000000",
+            "event_time": "2026-01-02 03:00:00",
+            "event_slot": 510,
+        },
+        {
+            "pool_address": "POOL_B",
+            "base_reserve": "85093814600000",
+            "quote_reserve": "20732018000",
+            "event_time": "2026-01-02 04:00:00",
+            "event_slot": 511,
+        },
+    ]
+    records = parse_snapshots(rows, snapshot_index=1)
+    assert len(records) == 2
+    # mint is None until the orchestrator remaps.
+    for r in records:
+        assert r.mint is None
+    # The pool address is stored in pool_address.
+    by_pool = {r.pool_address: r for r in records}
+    a = by_pool["POOL_A"]
+    assert a.snapshot_index == 1
+    assert a.base_reserve == "1070000000000000"
+    assert a.quote_reserve == "63000000000"
+    assert a.snapshot_slot == 510
+    # event_time parsed to Unix seconds.
+    assert a.snapshot_time == 1767322800  # 2026-01-02 03:00:00 UTC
+
+
+def test_parse_snapshots_returns_empty_for_no_rows():
+    from bootstrap.transform import parse_snapshots
+    assert parse_snapshots([], snapshot_index=5) == []
