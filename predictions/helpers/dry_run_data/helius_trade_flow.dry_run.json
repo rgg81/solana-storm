@@ -1,0 +1,21 @@
+{
+  "data": {
+    "mint": "8y45AJzCXLcdtsv3SaR4G6dkj1KMZH9aZS3uPMhqXuY9",
+    "window_minutes": 60,
+    "buy_count": 47,
+    "sell_count": 3,
+    "net_sol_lamports": 18500000000,
+    "unique_buyer_count": 89,
+    "buyer_wallets": [
+      "Dee9F5JhmqsJBQ2sM3eMNzKaLzngeXjMW2GH4MWkkP3z",
+      "Hyz3aL4kpL2sM3eMNzKaLzngeXjMW2GH4MWkkABCDEF1",
+      "BUYR_FAKE_1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "BUYR_FAKE_2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "BUYR_FAKE_3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "first_5_buy_timestamps_unix": [
+      1716286200, 1716286202, 1716286205, 1716286209, 1716286215
+    ]
+  },
+  "error": null
+}
