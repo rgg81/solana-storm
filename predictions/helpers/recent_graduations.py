@@ -21,6 +21,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# Load .env so DUNE_API_KEY is available when bootstrap.config.load_config() runs.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(_REPO_ROOT / ".env")
+except ImportError:
+    pass  # python-dotenv not installed; rely on environment having the key
+
 from predictions import config  # noqa: E402
 
 
@@ -37,8 +44,8 @@ def _recent_graduations_sql(cutoff_str: str) -> str:
     - pump_call_migrate          : graduation event (mint, pool, bonding_curve,
                                    graduation_time, graduation_slot)
     - pump_amm_evt_createpoolevent: deployer wallet + prior-launch count +
-                                   deployer age; also carries initial pool
-                                   reserves at the createpool event
+                                   deployer age (note: does NOT carry reserve
+                                   columns; liq_*_reserve_lamports set to 0)
     - pump_evt_tradeevent        : last bonding-curve trade before migration
                                    -> curve_real_sol_reserves
 
@@ -59,16 +66,17 @@ WITH grads AS (
     WHERE call_block_time >= TIMESTAMP '{cutoff_str}'
 ),
 
--- Deployer wallet, prior launches, deployer age (from createpoolevent)
+-- Deployer wallet (one row per mint, earliest event wins).
+-- Note: pump_amm_evt_createpoolevent only carries base_mint, coin_creator,
+-- and evt_block_time -- initial reserve columns are NOT available here.
 deployer_raw AS (
     SELECT
-        base_mint         AS mint,
-        coin_creator      AS deployer_wallet,
-        evt_block_time    AS pool_create_time,
-        pool_quote_token_reserves AS init_quote_reserve,
-        pool_base_token_reserves  AS init_base_reserve
+        base_mint               AS mint,
+        MIN_BY(coin_creator, evt_block_time) AS deployer_wallet,
+        MIN(evt_block_time)     AS pool_create_time
     FROM pumpdotfun_solana.pump_amm_evt_createpoolevent
     WHERE base_mint IN (SELECT mint FROM grads)
+    GROUP BY base_mint
 ),
 
 history AS (
@@ -81,61 +89,66 @@ deployer_signals AS (
         d.mint,
         d.deployer_wallet,
         d.pool_create_time,
-        d.init_quote_reserve,
-        d.init_base_reserve,
-        COUNT(*) FILTER (WHERE h.evt_block_time < (
-            SELECT graduation_time FROM grads g WHERE g.mint = d.mint
-        ))                                                 AS deployer_prior_launches,
+        COUNT(*) FILTER (WHERE h.evt_block_time < g.graduation_time)
+                                                           AS deployer_prior_launches,
         CAST(date_diff('second',
             MIN(h.evt_block_time),
-            (SELECT graduation_time FROM grads g WHERE g.mint = d.mint)
+            g.graduation_time
         ) AS BIGINT)                                       AS deployer_age_secs
     FROM deployer_raw d
+    JOIN grads g ON g.mint = d.mint
     JOIN history h ON h.coin_creator = d.deployer_wallet
-    GROUP BY d.mint, d.deployer_wallet, d.pool_create_time,
-             d.init_quote_reserve, d.init_base_reserve
+    GROUP BY d.mint, d.deployer_wallet, d.pool_create_time, g.graduation_time
 ),
 
 -- Final bonding-curve state before migration (last trade before grad_slot)
+-- Uses a standard subquery instead of QUALIFY (not supported in Trino/Dune).
+last_trade_slot_per_mint AS (
+    SELECT
+        grads.mint,
+        MAX(e2.evt_block_slot) AS last_trade_slot
+    FROM grads
+    JOIN pumpdotfun_solana.pump_evt_tradeevent e2
+        ON e2.mint = grads.mint
+       AND e2.evt_block_slot < grads.graduation_slot
+       AND e2.real_sol_reserves IS NOT NULL
+    GROUP BY grads.mint
+),
+
 curve_final AS (
     SELECT
-        t.mint,
+        lts.mint,
         e.real_sol_reserves                AS curve_real_sol_reserves,
         e.evt_block_slot                   AS curve_last_slot,
         e.evt_block_time                   AS curve_last_time
-    FROM pumpdotfun_solana.pump_evt_tradeevent e
-    JOIN (
-        SELECT grads.mint, grads.graduation_slot,
-               e2.evt_block_slot AS last_trade_slot
-        FROM grads
-        JOIN pumpdotfun_solana.pump_evt_tradeevent e2
-            ON e2.mint = grads.mint
-           AND e2.evt_block_slot < grads.graduation_slot
-           AND e2.real_sol_reserves IS NOT NULL
-        QUALIFY ROW_NUMBER() OVER (
-            PARTITION BY grads.mint ORDER BY e2.evt_block_slot DESC
-        ) = 1
-    ) t ON e.mint = t.mint AND e.evt_block_slot = t.last_trade_slot
+    FROM last_trade_slot_per_mint lts
+    JOIN pumpdotfun_solana.pump_evt_tradeevent e
+        ON e.mint = lts.mint
+       AND e.evt_block_slot = lts.last_trade_slot
 )
 
 SELECT
     g.mint,
     g.pool_address,
-    CAST(to_unixtime(g.graduation_time) AS BIGINT) AS graduation_time_unix,
-    COALESCE(d.deployer_wallet, g.migrator_wallet) AS deployer_wallet,
-    COALESCE(d.deployer_prior_launches, 0)         AS deployer_prior_launches,
-    COALESCE(d.deployer_age_secs, 0)               AS deployer_age_secs,
-    COALESCE(d.init_quote_reserve, 0)              AS liq_quote_reserve_lamports,
-    COALESCE(d.init_base_reserve, 0)               AS liq_base_reserve_lamports,
-    COALESCE(c.curve_real_sol_reserves, 0)         AS curve_real_sol_reserves_lamports,
+    CAST(to_unixtime(MAX(g.graduation_time)) AS BIGINT) AS graduation_time_unix,
+    COALESCE(MAX(d.deployer_wallet), MAX(g.migrator_wallet)) AS deployer_wallet,
+    COALESCE(MAX(d.deployer_prior_launches), 0)             AS deployer_prior_launches,
+    COALESCE(MAX(d.deployer_age_secs), 0)                   AS deployer_age_secs,
+    CAST(0 AS BIGINT)                                       AS liq_quote_reserve_lamports,
+    CAST(0 AS BIGINT)                                       AS liq_base_reserve_lamports,
+    COALESCE(MAX(c.curve_real_sol_reserves), 0)             AS curve_real_sol_reserves_lamports,
     COALESCE(
-        CAST(date_diff('second', c.curve_last_time, g.graduation_time) AS BIGINT),
+        CAST(date_diff('second',
+            MAX(c.curve_last_time),
+            MAX(g.graduation_time)
+        ) AS BIGINT),
         0
-    )                                              AS curve_completion_time_secs
+    )                                                       AS curve_completion_time_secs
 FROM grads g
 LEFT JOIN deployer_signals d ON d.mint = g.mint
 LEFT JOIN curve_final c ON c.mint = g.mint
-ORDER BY g.graduation_time DESC
+GROUP BY g.mint, g.pool_address
+ORDER BY graduation_time_unix DESC
 LIMIT 1000
 """.strip()
 

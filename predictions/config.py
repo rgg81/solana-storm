@@ -6,6 +6,14 @@ These are stable defaults. Override per-invocation via env vars where useful.
 from __future__ import annotations
 
 import os
+import pathlib as _pathlib
+
+# Auto-load .env so helpers work when invoked directly (e.g. python3 helper.py).
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(_pathlib.Path(__file__).resolve().parents[1] / ".env")
+except ImportError:
+    pass  # python-dotenv not installed; rely on shell environment
 
 # --- Universe + cohort ---
 UNIVERSE_HOURS_BACK = 24                  # scan last 24h of graduations
@@ -39,7 +47,15 @@ HEALTH_MIN_AUDITS = 30                    # before declaring trend
 HEALTH_WINDOW_DAYS = 7
 
 # --- Helper sources ---
-HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={os.environ.get('HELIUS_API_KEY', '')}"
+# Prefer HELIUS_API_KEY; fall back to SOLANA_RPC_URL which already embeds the key.
+_helius_api_key = os.environ.get("HELIUS_API_KEY", "").strip()
+_solana_rpc = os.environ.get("SOLANA_RPC_URL", "").strip()
+if _helius_api_key and not _helius_api_key.startswith("PASTE_"):
+    HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={_helius_api_key}"
+elif _solana_rpc:
+    HELIUS_RPC_URL = _solana_rpc
+else:
+    HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={_helius_api_key}"
 PUMPFUN_API_BASE = "https://frontend-api.pump.fun"
 TELEGRAM_CHANNELS = [
     "PumpFunChannel",
