@@ -1,0 +1,12 @@
+{
+  "data": {
+    "mint": "8y45AJzCXLcdtsv3SaR4G6dkj1KMZH9aZS3uPMhqXuY9",
+    "pool_address": "5tHRbpyZ3jh6gFhWJZsK1xJ8KqLNQH5kMzPMr8aPK7",
+    "pool_closed": false,
+    "current_base_reserve_lamports": 620000000000000,
+    "current_quote_reserve_lamports": 200000000000,
+    "current_price": 0.0003225806451612903,
+    "fetched_at_unix": 1716372600
+  },
+  "error": null
+}
