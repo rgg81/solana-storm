@@ -1,6 +1,6 @@
 ---
-version: 0
-last_updated: 2026-05-21T00:00:00Z
+version: 1
+last_updated: 2026-05-21T13:25:17Z
 total_decisions_audited: 0
 total_picks_audited: 0
 overall_buy_hit_rate: null
@@ -28,7 +28,29 @@ _(none yet — populated by Phase 1 audits)_
 
 # Candidate lessons (status: CANDIDATE, 1–2 audits, pending confirmation)
 
-_(none yet)_
+## C1 — Post-peak entry: ATH ≫ current MC means the bonding-curve top has already been printed
+
+`if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP (or at most WATCH).
+
+- status: CANDIDATE
+- confirms: 0
+- disconfirms: 0
+- last_confirmed_at: null
+- first_observed: 2026-05-21T13:25:17Z
+- evidence: Run `2026-05-21-13-25` shortlist — all 5 tokens hit this ratio (50–5,500×). Pumpfun's `ath_market_cap_timestamp` for graduated tokens corresponds to the bonding-curve peak, not a post-grad rally. The graduation event IS the local maximum; AMM phase is decay.
+- why this is novel: The static-features ML iterations ([[phase3-backtest-result]], [[pivot-price-prediction-result]], [[stop-loss-strategy-result]]) had no access to pumpfun's ATH field. This is a dynamic feature unique to the per-invocation skill.
+
+## C2 — Same-deployer same-symbol graduation farming
+
+`if deployer_wallet graduates ≥2 tokens with identical symbol within 1h` → SKIP both.
+
+- status: CANDIDATE
+- confirms: 0
+- disconfirms: 0
+- last_confirmed_at: null
+- first_observed: 2026-05-21T13:25:17Z
+- evidence: Run `2026-05-21-13-25` — deployer `6iPahKgzFBQphxDrzD81etdExgR2qNDJUDECGDzqtBpv` migrated two `SOCCER` tokens (different mints) 8 minutes apart. One pool drained to 18 SOL almost immediately; the other got 0 first-hour AMM buys. Classic spray-and-pray sniper farming.
+- detection: cross-reference `recent_graduations.deployer_wallet` against itself, group by deployer within 1h window. Optionally also check pumpfun `symbol` for collision.
 
 # Smart-wallet registry (auto-maintained, top-30 by winner_hits)
 
