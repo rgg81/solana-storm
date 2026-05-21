@@ -37,3 +37,85 @@ audits, the approach isn't working and the project should be retired.
 ```bash
 python3 -m pytest predictions/helpers/tests/ -v
 ```
+
+## First-run validation notes (Task 9)
+
+Validation completed: 2026-05-21 UTC.
+
+Unit tests: **19/19 passed** (all helpers, dry-run fixtures).
+
+Helper status against live APIs (mint `A2Lobq7x2xy2DHSWyJtD9Lez63CYNVwMHHdPyd7npump`,
+pool `CRLcGtzWidvekVZvV6JhkKS8FRhuRb7u1JAPgcG4fWNe` — a graduation from minutes before
+the test run):
+
+- `recent_graduations.py`: **works** — returned 217 unique mints from the last 24h with
+  deployer_wallet, deployer_prior_launches, deployer_age_secs, and
+  curve_real_sol_reserves populated. Three SQL bugs fixed during validation (see commit
+  `f153090`): QUALIFY clause replaced with GROUP BY MAX(), non-existent reserve columns
+  removed from `createpoolevent` CTE, scalar subquery fan-out fixed with explicit GROUP
+  BY. Note: `liq_quote_reserve_lamports` and `liq_base_reserve_lamports` are hardcoded
+  to 0 — `pump_amm_evt_createpoolevent` does not carry reserve columns; these signals
+  are not available from Dune at graduation time.
+
+- `helius_trade_flow.py`: **works** — found 1 buy / 0 sells / 1 unique buyer on the
+  test mint within the 60-minute window. Config fix (`f153090`) added SOLANA_RPC_URL
+  fallback so HELIUS_API_KEY placeholder in .env doesn't block calls.
+
+- `pumpfun_scrape.py`: **API unavailable during test** — `frontend-api.pump.fun`
+  returned HTTP 530 (Cloudflare origin unreachable) for all endpoints on 2026-05-21.
+  The helper code is correct (graceful `endpoints_failed` list returned). Re-test on
+  first manual invocation; if pump.fun continues blocking WSL/server IPs, consider
+  routing through a residential proxy or scraping the main `pump.fun` page instead.
+
+- `telegram_chatter.py`: **works** — all 5 channels accessible (0 channels dropped).
+  Mention counts are 0 for "STORM" (expected — not a current token).
+
+- `audit_outcome.py`: **returns pool_closed: true for all live PumpSwap pools** —
+  known limitation: `getAccountInfo` with `encoding=jsonParsed` cannot parse PumpSwap's
+  custom account layout. The raw account data is valid but not an SPL-token program
+  account. To fix properly: deserialize the raw base64 account data using the PumpSwap
+  IDL struct layout (8-byte discriminator + fixed-offset reserve fields). Defer until
+  the first real audit cycle; until then, all outcomes will be recorded as
+  `pool_closed: true / realized_return: -100%`, which over-penalizes every pick.
+
+### env setup note
+
+`HELIUS_API_KEY` in `.env` is a placeholder. The actual key is embedded in
+`SOLANA_RPC_URL`. After Task 9's config fix, helpers fall back to `SOLANA_RPC_URL`
+automatically. Alternatively, set `HELIUS_API_KEY` to the real key value
+(`f2055ada-...`) in `.env` to make the fallback unnecessary.
+
+## How to do the first manual invocation
+
+The skill is ready. In a fresh Claude Code session in this repo directory, invoke:
+
+```
+/pump-prediction
+```
+
+(The skill lives at `.claude/skills/pump-prediction.md` and auto-loads via Claude Code's
+skill discovery.)
+
+Expected behavior on first invocation:
+
+- **Phase 1** finds 0 pending audits (no prior decisions exist yet) and skips to Phase 2.
+- **Phase 2** queries Dune for the last 24h graduations (~200-300 tokens), applies
+  pre-filters, enriches a 30-50 token shortlist (Helius trade flow + Telegram chatter
+  per token), then writes a decision file at
+  `predictions/diary/decisions/<YYYY-MM-DD-HH-MM>.md` with 3-5 picks.
+- **Total time:** ~5-15 minutes depending on shortlist size and helper response times.
+- **Total cost:** ~1-2 Dune credits + a few hundred Helius RPC credits (free-tier) +
+  HTTP scraping (free). No paid LLM API calls beyond the Claude Code session itself.
+
+After 4-6 hours, invoke again. Phase 1 will audit the first invocation's picks.
+Repeat 4-6x/day.
+
+**Known issue on first audits:** `audit_outcome.py` will report `pool_closed: true`
+(and thus `realized_return: -100%`) for all picks due to the PumpSwap layout-parsing
+limitation above. Fix `audit_outcome.py` to deserialize raw account data before
+trusting audit metrics.
+
+After ~10-30 invocations, check `predictions/diary/lessons.md` — the smart-wallet
+registry and validated lessons should be populating. If after 30+ audits the rolling
+hit-rate stats show `trend: flat` or `declining`, the skill isn't developing edge;
+retire per the spec.
