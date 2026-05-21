@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "mint": "8y45AJzCXLcdtsv3SaR4G6dkj1KMZH9aZS3uPMhqXuY9",
+      "pool_address": "5tHRbpyZ3jh6gFhWJZsK1xJ8KqLNQH5kMzPMr8aPK7",
+      "graduation_time_unix": 1716286182,
+      "deployer_wallet": "DEPLOY_FAKE_8y45",
+      "deployer_prior_launches": 3,
+      "deployer_age_secs": 691200,
+      "liq_quote_reserve_lamports": 87000000000,
+      "liq_base_reserve_lamports": 985000000000000,
+      "curve_real_sol_reserves_lamports": 85000000000,
+      "curve_completion_time_secs": 4200
+    },
+    {
+      "mint": "RUGBOT_FAKE_MINT_for_dry_run_xxxxxxxxxxxxxxxxxx",
+      "pool_address": "RUG_FAKE_POOL_xxxxxxxxxxxxxxxxxxxxxx",
+      "graduation_time_unix": 1716290000,
+      "deployer_wallet": "SPAM_DEPLOYER_FAKE",
+      "deployer_prior_launches": 247,
+      "deployer_age_secs": 432000,
+      "liq_quote_reserve_lamports": 80000000000,
+      "liq_base_reserve_lamports": 1000000000000000,
+      "curve_real_sol_reserves_lamports": 79000000000,
+      "curve_completion_time_secs": 1800
+    }
+  ],
+  "error": null
+}
