@@ -182,10 +182,12 @@ Parse the JSON. If `error` is non-null:
 - If the source is REQUIRED (Dune): abort Phase 2. Write `predictions/diary/decisions/<ts>-SKIPPED.md` (see §3 below). Stop.
 
 Apply the cheap prefilter (in your reasoning, no extra queries):
-- Drop tokens where `liq_quote_reserve_lamports < 5_000_000_000` (5 SOL).
+- Drop tokens where `curve_real_sol_reserves_lamports < 50_000_000_000` (50 SOL — the curve must have completed substantially before graduating).
 - Drop tokens where `deployer_prior_launches > 200`.
 
-Cap the shortlist at 50 tokens. If more than 50 remain, take the 50 with the highest `liq_quote_reserve_lamports`.
+NOTE: `liq_quote_reserve_lamports` is currently 0 for all tokens because the source Dune view doesn't expose initial pool reserves. The skill uses `curve_real_sol_reserves_lamports` (which IS populated, in lamports) as a proxy for "tokens that graduated with meaningful capital."
+
+Cap the shortlist at 50 tokens. If more than 50 remain, take the 50 with the highest `curve_real_sol_reserves_lamports`.
 
 ### 2c. Deep-enrich the shortlist
 

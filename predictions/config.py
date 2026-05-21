@@ -18,8 +18,15 @@ except ImportError:
 # --- Universe + cohort ---
 UNIVERSE_HOURS_BACK = 24                  # scan last 24h of graduations
 SHORTLIST_MAX = 50                        # cap on deep-enriched candidates per run
-PREFILTER_MIN_LIQ_QUOTE_LAMPORTS = 5_000_000_000   # 5 SOL minimum entry depth
+# NOTE: liq_quote_reserve_lamports is currently 0 for all tokens (source Dune
+# view doesn't expose initial pool reserves). The skill prefilters on
+# curve_real_sol_reserves_lamports instead -- the floor below matches what the
+# skill file documents.
+PREFILTER_MIN_CURVE_SOL_LAMPORTS = 50_000_000_000  # 50 SOL on the curve at graduation
 PREFILTER_MAX_DEPLOYER_PRIOR_LAUNCHES = 200
+# The original liq_quote field is retained as a constant for future use,
+# but defaults to 0 (effectively unused while the source data gap persists).
+PREFILTER_MIN_LIQ_QUOTE_LAMPORTS = 0
 
 # --- Picks ---
 PICKS_PER_RUN_MIN = 3

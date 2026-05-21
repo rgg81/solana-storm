@@ -119,3 +119,11 @@ After ~10-30 invocations, check `predictions/diary/lessons.md` — the smart-wal
 registry and validated lessons should be populating. If after 30+ audits the rolling
 hit-rate stats show `trend: flat` or `declining`, the skill isn't developing edge;
 retire per the spec.
+
+### Prefilter field switched (post-validation fix)
+
+The skill's Phase 2 prefilter originally used `liq_quote_reserve_lamports < 5 SOL` to drop low-liquidity tokens. During validation we discovered this field is `0` for all tokens (the source Dune view doesn't expose initial pool reserves). With every token at 0, the original prefilter would have dropped 100% of the universe → empty shortlists.
+
+The skill (and `config.PREFILTER_MIN_CURVE_SOL_LAMPORTS = 50_000_000_000`) now filters on `curve_real_sol_reserves_lamports < 50 SOL` instead. This field IS populated and gives the same intent: "tokens that graduated with meaningful capital." The 50 SOL threshold matches the spirit of the original 5 SOL liquidity floor (pump.fun graduation requires ~85 SOL on the curve, so 50 SOL is a reasonable floor).
+
+The original `PREFILTER_MIN_LIQ_QUOTE_LAMPORTS` constant is kept in config.py with value `0` (effectively unused) until the source data gap is closed.
