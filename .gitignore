@@ -17,3 +17,9 @@ storm.db
 
 # Phase 3 backtest report artifacts
 model/report/
+
+# pump-prediction diary state (per-run files; lessons.md is committed)
+predictions/diary/decisions/*.md
+predictions/diary/outcomes/*.md
+predictions/.cache/
+predictions/telegram.session*
