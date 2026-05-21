@@ -1,6 +1,6 @@
 ---
-version: 1
-last_updated: 2026-05-21T13:25:17Z
+version: 2
+last_updated: 2026-05-21T17:40:20Z
 total_decisions_audited: 0
 total_picks_audited: 0
 overall_buy_hit_rate: null
@@ -33,24 +33,30 @@ _(none yet — populated by Phase 1 audits)_
 `if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP (or at most WATCH).
 
 - status: CANDIDATE
-- confirms: 0
+- confirms: 0 (audit-based, needs 3 to promote VALIDATED)
 - disconfirms: 0
 - last_confirmed_at: null
 - first_observed: 2026-05-21T13:25:17Z
-- evidence: Run `2026-05-21-13-25` shortlist — all 5 tokens hit this ratio (50–5,500×). Pumpfun's `ath_market_cap_timestamp` for graduated tokens corresponds to the bonding-curve peak, not a post-grad rally. The graduation event IS the local maximum; AMM phase is decay.
+- observation_count: **10** (5 + 5 across runs `2026-05-21-13-25` and `2026-05-21-17-40`)
+- evidence: 10 of 10 shortlisted tokens triggered this ratio. Min seen: 50×. Max seen: **15,324×** (token `24`, mint HJaD3V6B…). The bonding curve consistently extracts the price peak; AMM phase is decay. No observed counter-example in two consecutive cohorts.
 - why this is novel: The static-features ML iterations ([[phase3-backtest-result]], [[pivot-price-prediction-result]], [[stop-loss-strategy-result]]) had no access to pumpfun's ATH field. This is a dynamic feature unique to the per-invocation skill.
 
-## C2 — Same-deployer same-symbol graduation farming
+## C2 — Same-deployer multi-graduation farming (expanded)
 
-`if deployer_wallet graduates ≥2 tokens with identical symbol within 1h` → SKIP both.
+`if deployer_wallet appears ≥2 times in a single Phase 2 cohort (any symbol)` → SKIP all from that deployer. Same deployer reappearing across consecutive runs is even stronger evidence.
 
-- status: CANDIDATE
-- confirms: 0
+- status: CANDIDATE (expanded from same-symbol-only after run 17:40)
+- confirms: 0 (audit-based, needs 3 to promote VALIDATED)
 - disconfirms: 0
 - last_confirmed_at: null
 - first_observed: 2026-05-21T13:25:17Z
-- evidence: Run `2026-05-21-13-25` — deployer `6iPahKgzFBQphxDrzD81etdExgR2qNDJUDECGDzqtBpv` migrated two `SOCCER` tokens (different mints) 8 minutes apart. One pool drained to 18 SOL almost immediately; the other got 0 first-hour AMM buys. Classic spray-and-pray sniper farming.
-- detection: cross-reference `recent_graduations.deployer_wallet` against itself, group by deployer within 1h window. Optionally also check pumpfun `symbol` for collision.
+- observation_count: **6** across runs `2026-05-21-13-25` and `2026-05-21-17-40`
+- evidence:
+  - 13:25 run: deployer `6iPahKgzFBQphxDrzD81etdExgR2qNDJUDECGDzqtBpv` migrated 2 `SOCCER` tokens 8 min apart (original narrow C2 hit).
+  - 17:40 run: deployer `BnnNJJgy9w2MLQ9XBKJKG9FQa2r9qdW7u5VpzEkwUcc3` migrated `FOID` + `GAME` 30 min apart (different symbols — narrow C2 misses).
+  - 17:40 run: deployer `dshAybqFXYVVTd4mzy9Uk6KD7km8wE9iZgPMYZdzEXc` migrated `24` + `MESSI` + `NPC` over 110 min (3 tokens).
+  - **Cross-run**: `dshAybqF…` also deployed `SPIG` in the 13:25 cohort. That's **4 graduations in <12h from one wallet** — industrial farming, not solo dev.
+- detection: group `recent_graduations` rows by `deployer_wallet`; SKIP any deployer with ≥2 rows in the last 24h window. Maintain a rolling "known farmer wallets" set seeded by repeat offenders.
 
 # Smart-wallet registry (auto-maintained, top-30 by winner_hits)
 
