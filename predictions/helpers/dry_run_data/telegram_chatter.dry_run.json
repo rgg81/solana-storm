@@ -1,0 +1,17 @@
+{
+  "data": {
+    "ticker": "STORM",
+    "channels_polled": 5,
+    "channels_available": 4,
+    "channels_dropped": ["DeadChannelFakeName"],
+    "total_mentions": 9,
+    "per_channel_mentions": {
+      "PumpFunChannel": 0,
+      "pumpfunsignal": 3,
+      "SolanaMemeCoinss": 4,
+      "MemeCoinDaily": 2,
+      "MemeCoinWhalePumps": 0
+    }
+  },
+  "error": null
+}
