@@ -40,115 +40,42 @@ def _dry_run_payload() -> dict:
 def _recent_graduations_sql(cutoff_str: str) -> str:
     """Build the SQL for the last UNIVERSE_HOURS_BACK hours of graduations.
 
-    Joins three sources:
-    - pump_call_migrate          : graduation event (mint, pool, bonding_curve,
-                                   graduation_time, graduation_slot)
-    - pump_amm_evt_createpoolevent: deployer wallet + prior-launch count +
-                                   deployer age (note: does NOT carry reserve
-                                   columns; liq_*_reserve_lamports set to 0)
-    - pump_evt_tradeevent        : last bonding-curve trade before migration
-                                   -> curve_real_sol_reserves
+    MINIMAL VERSION (2026-05-21, post-double-timeout): every join we tried
+    (pump_evt_tradeevent for curve reserves, pump_amm_evt_createpoolevent
+    for deployer history, pump_amm_evt_buy/sellevent for entry reserves)
+    timed out on Dune's 2-minute free-engine limit even with IN-clause
+    filters. The buy/sellevent tables are too large for any kind of scan
+    even when narrowed to ~200 pools.
 
-    A missing createpoolevent or tradeevent row falls back to NULLs (LEFT JOIN).
-    curve_completion_time_secs is approximated as seconds from the bonding-curve
-    first trade to the migration (NULL when the bonding-curve slot is missing).
+    This version queries ONE small table only -- `pump_call_migrate` --
+    and returns just the graduation facts: mint, pool, graduation_time,
+    migrator_wallet. ~200 rows for a 24h window, completes in seconds.
+
+    Reserves + deployer signals are deliberately omitted (set to 0). The
+    skill's Phase 2 deep-enrich step picks them up directly via Helius RPC
+    (`helius_trade_flow.py` + `audit_outcome.py` both fetch live pool
+    state via `getTokenAccountsByOwner`). Phase 2 also skips the
+    reserve-based prefilter when this helper returns 0 reserves -- it
+    instead caps the shortlist at SHORTLIST_MAX most-recent graduations
+    and lets the deep-enrich Helius calls discover real liquidity per
+    token. That's slightly more Helius credits per run but well within
+    the free tier (50 tokens x 4 calls = 200 credits vs the 100k/day cap).
     """
     return f"""
-WITH grads AS (
-    SELECT
-        account_mint          AS mint,
-        account_pool          AS pool_address,
-        account_bonding_curve AS bonding_curve_address,
-        account_user          AS migrator_wallet,
-        call_block_time       AS graduation_time,
-        call_block_slot       AS graduation_slot
-    FROM pumpdotfun_solana.pump_call_migrate
-    WHERE call_block_time >= TIMESTAMP '{cutoff_str}'
-),
-
--- Deployer wallet (one row per mint, earliest event wins).
--- Note: pump_amm_evt_createpoolevent only carries base_mint, coin_creator,
--- and evt_block_time -- initial reserve columns are NOT available here.
-deployer_raw AS (
-    SELECT
-        base_mint               AS mint,
-        MIN_BY(coin_creator, evt_block_time) AS deployer_wallet,
-        MIN(evt_block_time)     AS pool_create_time
-    FROM pumpdotfun_solana.pump_amm_evt_createpoolevent
-    WHERE base_mint IN (SELECT mint FROM grads)
-    GROUP BY base_mint
-),
-
-history AS (
-    SELECT coin_creator, evt_block_time
-    FROM pumpdotfun_solana.pump_amm_evt_createpoolevent
-),
-
-deployer_signals AS (
-    SELECT
-        d.mint,
-        d.deployer_wallet,
-        d.pool_create_time,
-        COUNT(*) FILTER (WHERE h.evt_block_time < g.graduation_time)
-                                                           AS deployer_prior_launches,
-        CAST(date_diff('second',
-            MIN(h.evt_block_time),
-            g.graduation_time
-        ) AS BIGINT)                                       AS deployer_age_secs
-    FROM deployer_raw d
-    JOIN grads g ON g.mint = d.mint
-    JOIN history h ON h.coin_creator = d.deployer_wallet
-    GROUP BY d.mint, d.deployer_wallet, d.pool_create_time, g.graduation_time
-),
-
--- Final bonding-curve state before migration (last trade before grad_slot)
--- Uses a standard subquery instead of QUALIFY (not supported in Trino/Dune).
-last_trade_slot_per_mint AS (
-    SELECT
-        grads.mint,
-        MAX(e2.evt_block_slot) AS last_trade_slot
-    FROM grads
-    JOIN pumpdotfun_solana.pump_evt_tradeevent e2
-        ON e2.mint = grads.mint
-       AND e2.evt_block_slot < grads.graduation_slot
-       AND e2.real_sol_reserves IS NOT NULL
-    GROUP BY grads.mint
-),
-
-curve_final AS (
-    SELECT
-        lts.mint,
-        e.real_sol_reserves                AS curve_real_sol_reserves,
-        e.evt_block_slot                   AS curve_last_slot,
-        e.evt_block_time                   AS curve_last_time
-    FROM last_trade_slot_per_mint lts
-    JOIN pumpdotfun_solana.pump_evt_tradeevent e
-        ON e.mint = lts.mint
-       AND e.evt_block_slot = lts.last_trade_slot
-)
-
 SELECT
-    g.mint,
-    g.pool_address,
-    CAST(to_unixtime(MAX(g.graduation_time)) AS BIGINT) AS graduation_time_unix,
-    COALESCE(MAX(d.deployer_wallet), MAX(g.migrator_wallet)) AS deployer_wallet,
-    COALESCE(MAX(d.deployer_prior_launches), 0)             AS deployer_prior_launches,
-    COALESCE(MAX(d.deployer_age_secs), 0)                   AS deployer_age_secs,
-    CAST(0 AS BIGINT)                                       AS liq_quote_reserve_lamports,
-    CAST(0 AS BIGINT)                                       AS liq_base_reserve_lamports,
-    COALESCE(MAX(c.curve_real_sol_reserves), 0)             AS curve_real_sol_reserves_lamports,
-    COALESCE(
-        CAST(date_diff('second',
-            MAX(c.curve_last_time),
-            MAX(g.graduation_time)
-        ) AS BIGINT),
-        0
-    )                                                       AS curve_completion_time_secs
-FROM grads g
-LEFT JOIN deployer_signals d ON d.mint = g.mint
-LEFT JOIN curve_final c ON c.mint = g.mint
-GROUP BY g.mint, g.pool_address
-ORDER BY graduation_time_unix DESC
+    account_mint                                    AS mint,
+    account_pool                                    AS pool_address,
+    CAST(to_unixtime(call_block_time) AS BIGINT)    AS graduation_time_unix,
+    account_user                                    AS deployer_wallet,
+    CAST(0 AS BIGINT)                               AS deployer_prior_launches,
+    CAST(0 AS BIGINT)                               AS deployer_age_secs,
+    CAST(0 AS BIGINT)                               AS liq_quote_reserve_lamports,
+    CAST(0 AS BIGINT)                               AS liq_base_reserve_lamports,
+    CAST(0 AS BIGINT)                               AS curve_real_sol_reserves_lamports,
+    CAST(0 AS BIGINT)                               AS curve_completion_time_secs
+FROM pumpdotfun_solana.pump_call_migrate
+WHERE call_block_time >= TIMESTAMP '{cutoff_str}'
+ORDER BY call_block_time DESC
 LIMIT 1000
 """.strip()
 
@@ -181,10 +108,16 @@ def _live_query() -> dict:
     except Exception as e:
         return {"data": None, "error": f"dune query failed: {e}"}
 
-    out = []
+    # `pump_call_migrate` can return multiple rows per migration (e.g.,
+    # one per migrator-wallet participant). Dedupe by mint, keeping the
+    # most recent row per mint.
+    by_mint: dict[str, dict] = {}
     for r in rows:
-        out.append({
-            "mint": str(r.get("mint") or ""),
+        mint = str(r.get("mint") or "")
+        if not mint:
+            continue
+        row = {
+            "mint": mint,
             "pool_address": str(r.get("pool_address") or ""),
             "graduation_time_unix": _to_int(r.get("graduation_time_unix")),
             "deployer_wallet": str(r.get("deployer_wallet") or ""),
@@ -194,8 +127,13 @@ def _live_query() -> dict:
             "liq_base_reserve_lamports": _to_int(r.get("liq_base_reserve_lamports")),
             "curve_real_sol_reserves_lamports": _to_int(r.get("curve_real_sol_reserves_lamports")),
             "curve_completion_time_secs": _to_int(r.get("curve_completion_time_secs")),
-        })
+        }
+        existing = by_mint.get(mint)
+        if existing is None or row["graduation_time_unix"] > existing["graduation_time_unix"]:
+            by_mint[mint] = row
 
+    # Return in chronological order (most recent first).
+    out = sorted(by_mint.values(), key=lambda r: -r["graduation_time_unix"])
     return {"data": out, "error": None}
 
 
