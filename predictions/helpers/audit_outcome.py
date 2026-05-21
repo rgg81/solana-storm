@@ -7,9 +7,15 @@ Output JSON to stdout:
     {"data": {"mint": ..., "pool_closed": false, "current_base_reserve_lamports": ...,
               "current_quote_reserve_lamports": ..., "current_price": ...}, "error": null}
 
-If the pool account is closed / not found, returns pool_closed: true
-with reserves = 0 and current_price = 0 -- which the skill interprets
-as realized return = -100%.
+Strategy (post-fix): instead of parsing the PumpSwap pool account's custom
+binary layout, fetch the pool's two SPL-token vault accounts directly via
+`getTokenAccountsByOwner`. The vault accounts ARE spl-token accounts and
+parse cleanly with `encoding=jsonParsed`. This sidesteps the PumpSwap IDL
+deserialization problem entirely.
+
+If either vault lookup returns no accounts (rug-and-close: deployer
+withdrew + closed the vaults), `pool_closed: true` with zero reserves --
+which the skill interprets as realized return = -100%.
 """
 
 from __future__ import annotations
@@ -27,6 +33,9 @@ if str(_REPO_ROOT) not in sys.path:
 import requests  # noqa: E402
 
 from predictions import config  # noqa: E402
+
+# Wrapped SOL mint -- PumpSwap pools use this as the quote-side mint.
+WSOL_MINT = "So11111111111111111111111111111111111111112"
 
 
 def _dry_run_payload(mint: str, pool: str) -> dict:
@@ -55,21 +64,49 @@ def _rpc_call(method: str, params: list) -> dict:
     raise RuntimeError(f"RPC {method} failed: {last_err}")
 
 
-def _live_query(mint: str, pool: str) -> dict:
+def _vault_balance_lamports(pool: str, mint: str) -> int | None:
+    """Look up the SPL-token vault owned by `pool` for `mint`; return amount in raw units.
+
+    Returns None if no vault account exists (account was closed / never existed)
+    or if the parsed response shape is unexpected.
+    """
     try:
         resp = _rpc_call(
-            "getAccountInfo",
-            [pool, {"encoding": "jsonParsed", "commitment": "confirmed"}],
+            "getTokenAccountsByOwner",
+            [pool, {"mint": mint}, {"encoding": "jsonParsed", "commitment": "confirmed"}],
         )
-    except Exception as e:
-        return {"data": None, "error": f"getAccountInfo: {e}"}
+    except Exception:
+        return None
+    value = ((resp or {}).get("result") or {}).get("value")
+    if not isinstance(value, list) or not value:
+        return None
+    # If there are multiple matching accounts (unusual), sum them.
+    total = 0
+    for acct in value:
+        try:
+            amount = (
+                acct.get("account", {})
+                    .get("data", {})
+                    .get("parsed", {})
+                    .get("info", {})
+                    .get("tokenAmount", {})
+                    .get("amount")
+            )
+            total += int(amount or 0)
+        except Exception:
+            continue
+    return total
 
-    result = (resp or {}).get("result", {})
-    value = (result or {}).get("value")
+
+def _live_query(mint: str, pool: str) -> dict:
     now = int(time.time())
 
-    if value is None:
-        # Pool account closed (rug-and-close).
+    base_reserve = _vault_balance_lamports(pool, mint)
+    quote_reserve = _vault_balance_lamports(pool, WSOL_MINT)
+
+    # If either vault returned None (RPC failure) OR zero reserves, treat as closed.
+    if (base_reserve is None or quote_reserve is None
+            or base_reserve <= 0 or quote_reserve <= 0):
         return {
             "data": {
                 "mint": mint, "pool_address": pool, "pool_closed": True,
@@ -81,33 +118,12 @@ def _live_query(mint: str, pool: str) -> dict:
             "error": None,
         }
 
-    data = value.get("data")
-    base_lamports = 0
-    quote_lamports = 0
-    if isinstance(data, dict) and data.get("program") == "spl-token":
-        parsed = data.get("parsed", {}).get("info", {})
-        base_lamports = int((parsed.get("baseReserve") or {}).get("amount") or 0)
-        quote_lamports = int((parsed.get("quoteReserve") or {}).get("amount") or 0)
-
-    if base_lamports <= 0:
-        # Couldn't parse reserves -- treat as pool_closed for safety.
-        return {
-            "data": {
-                "mint": mint, "pool_address": pool, "pool_closed": True,
-                "current_base_reserve_lamports": 0,
-                "current_quote_reserve_lamports": 0,
-                "current_price": 0.0,
-                "fetched_at_unix": now,
-            },
-            "error": None,
-        }
-
-    price = quote_lamports / base_lamports if base_lamports > 0 else 0.0
+    price = quote_reserve / base_reserve
     return {
         "data": {
             "mint": mint, "pool_address": pool, "pool_closed": False,
-            "current_base_reserve_lamports": base_lamports,
-            "current_quote_reserve_lamports": quote_lamports,
+            "current_base_reserve_lamports": base_reserve,
+            "current_quote_reserve_lamports": quote_reserve,
             "current_price": price,
             "fetched_at_unix": now,
         },

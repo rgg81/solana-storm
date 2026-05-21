@@ -70,13 +70,9 @@ the test run):
 - `telegram_chatter.py`: **works** — all 5 channels accessible (0 channels dropped).
   Mention counts are 0 for "STORM" (expected — not a current token).
 
-- `audit_outcome.py`: **returns pool_closed: true for all live PumpSwap pools** —
-  known limitation: `getAccountInfo` with `encoding=jsonParsed` cannot parse PumpSwap's
-  custom account layout. The raw account data is valid but not an SPL-token program
-  account. To fix properly: deserialize the raw base64 account data using the PumpSwap
-  IDL struct layout (8-byte discriminator + fixed-offset reserve fields). Defer until
-  the first real audit cycle; until then, all outcomes will be recorded as
-  `pool_closed: true / realized_return: -100%`, which over-penalizes every pick.
+- `audit_outcome.py`: **RESOLVED** -- now uses `getTokenAccountsByOwner` to fetch
+  base + quote SPL-token vaults directly (sidesteps PumpSwap layout parsing).
+  Verified against live pools.
 
 ### env setup note
 
@@ -110,10 +106,10 @@ Expected behavior on first invocation:
 After 4-6 hours, invoke again. Phase 1 will audit the first invocation's picks.
 Repeat 4-6x/day.
 
-**Known issue on first audits:** `audit_outcome.py` will report `pool_closed: true`
-(and thus `realized_return: -100%`) for all picks due to the PumpSwap layout-parsing
-limitation above. Fix `audit_outcome.py` to deserialize raw account data before
-trusting audit metrics.
+**Audit accuracy note:** `audit_outcome.py` now uses `getTokenAccountsByOwner` to
+read base + quote SPL-token vault balances directly, returning real reserve data for
+active pools. `pool_closed: true` (and `realized_return: -100%`) is only returned for
+tokens whose vaults were genuinely emptied (rug-and-close).
 
 After ~10-30 invocations, check `predictions/diary/lessons.md` — the smart-wallet
 registry and validated lessons should be populating. If after 30+ audits the rolling
