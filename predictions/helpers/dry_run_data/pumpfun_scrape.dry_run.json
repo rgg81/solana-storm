@@ -2,12 +2,21 @@
   "data": {
     "mint": "8y45AJzCXLcdtsv3SaR4G6dkj1KMZH9aZS3uPMhqXuY9",
     "comment_count": 22,
-    "creator_reply_count": 3,
+    "creator_reply_count": 0,
     "creator_wallet": "DEPLOY_FAKE_8y45",
-    "creator_prior_launches": 3,
-    "recent_trade_count_60min": 84,
-    "endpoints_failed": [],
-    "fetched_at_unix": 1716290000
+    "creator_prior_launches": 0,
+    "recent_trade_count_60min": 0,
+    "endpoints_failed": ["comments", "trades"],
+    "fetched_at_unix": 1716290000,
+    "symbol": "STORM",
+    "name": "Solana Storm",
+    "market_cap_usd": 8500.0,
+    "ath_market_cap_usd": 128000.0,
+    "ath_market_cap_unix": 1716286500,
+    "last_trade_unix": 1716289800,
+    "creator_telegram": "https://t.me/SolanaStorm",
+    "nsfw": false,
+    "is_banned": false
   },
   "error": null
 }

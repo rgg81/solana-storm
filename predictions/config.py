@@ -63,7 +63,7 @@ elif _solana_rpc:
     HELIUS_RPC_URL = _solana_rpc
 else:
     HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={_helius_api_key}"
-PUMPFUN_API_BASE = "https://frontend-api.pump.fun"
+PUMPFUN_API_BASE = "https://frontend-api-v3.pump.fun"  # v3 -- v1 host has Cloudflare 1016 DNS error
 TELEGRAM_CHANNELS = [
     "PumpFunChannel",
     "pumpfunsignal",
