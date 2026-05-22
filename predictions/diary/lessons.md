@@ -1,6 +1,6 @@
 ---
-version: 3
-last_updated: 2026-05-21T22:00:37Z
+version: 4
+last_updated: 2026-05-22T02:07:33Z
 total_decisions_audited: 0
 total_picks_audited: 0
 overall_buy_hit_rate: null
@@ -37,8 +37,8 @@ _(none yet — populated by Phase 1 audits)_
 - disconfirms: 0
 - last_confirmed_at: null
 - first_observed: 2026-05-21T13:25:17Z
-- observation_count: **15** (5 + 5 + 5 across runs `2026-05-21-13-25`, `2026-05-21-17-40`, `2026-05-21-22-00`)
-- evidence: 15 of 15 shortlisted tokens triggered this ratio. Min seen: 50×. Max seen: **15,324×** (token `24`). Run 22:00 added range 143×–4,175×; new ATH-record token `NATRO` at $1.06M ATH (highest observed). The bonding curve consistently extracts the price peak; AMM phase is decay. **No counter-example in 15 consecutive observations.**
+- observation_count: **20** (5 × 4 cohorts: 13-25, 17-40, 22-00, 02-07)
+- evidence: 20 of 20 shortlisted tokens triggered this ratio. Min seen: **87.9×** (CR7 in 02:07 run, new low — was the most BUY-attractive candidate yet by other signals). Max seen: **21,847×** (TRUMP in 02:07 run, new high). The bonding curve consistently extracts the price peak; AMM phase is decay. **No counter-example in 20 consecutive observations.**
 - why this is novel: The static-features ML iterations ([[phase3-backtest-result]], [[pivot-price-prediction-result]], [[stop-loss-strategy-result]]) had no access to pumpfun's ATH field. This is a dynamic feature unique to the per-invocation skill.
 
 ## C2 — Same-deployer multi-graduation farming (expanded)
@@ -57,6 +57,7 @@ _(none yet — populated by Phase 1 audits)_
   - 17:40 run: deployer `dshAybqF…` migrated `24` + `MESSI` + `NPC` over 110 min (3 tokens).
   - 22:00 run: deployer `28kDW9j4…` migrated `Rick67` + `WRLD` 26 min apart (new farmer flagged).
   - 22:00 run: deployer `BnnNJJgy…` reappeared with `MILHOUSE` (and 11 grads/24h universe-wide).
+  - 02:07 run: 3 of 5 picks were from known farmers (`6iPahKgz` CYCLE, `dshAybqF` Mindshare, `BnnNJJgy` ZePIN). Mega-farmer `9C4nRvhh` still dominant at 43 grads/24h.
 - evidence (universe-level dominance, observed at 22:00):
   - `9C4nRvhh…`: **65 graduations/24h** (mega-farmer — newly detected)
   - `dshAybqF…`: 12 grads/24h (cross-day persistence)
@@ -70,6 +71,23 @@ _(none yet — populated by Phase 1 audits)_
   - `28kDW9j49yH1gYmtK3mGsnoejfq5sP8mCy8GAzocWd59` (Rick67/WRLD, 2 grads/24h, NEW)
   - `9C4nRvhhVquCKA…` (MEGA-FARMER, 65 grads/24h, NEW)
 - detection: group `recent_graduations` rows by `deployer_wallet`; SKIP any with ≥2 rows in 24h OR any wallet in known-farmer registry. **Future helper improvement**: filter at the Dune query level to avoid wasting Helius credits enriching tokens that will be C2-rejected.
+
+## C3 — High unique_buyer_count is misleading when first-5 spread is tight
+
+`if unique_buyer_count >= 50 AND (first-5 buy timestamps span ≤ 60 seconds)` → SKIP. The "buyers" are sniper-bot wallets owned by a smaller operator pool, racing for the migration-arbitrage opportunity. They are NOT 50+ organic retail buyers.
+
+- status: CANDIDATE
+- confirms: 0 (audit-based, needs 3 to promote VALIDATED)
+- disconfirms: 0
+- last_confirmed_at: null
+- first_observed: 2026-05-22T02:07:33Z
+- observation_count: **2** (CR7 + TRUMP in 02:07 run)
+- evidence:
+  - CR7 (mint AgHh16tz...): 84 unique buyer wallets, all first-5 timestamps within 1 second (1779415631–1779415632). 0 sells. 356 SOL pool (deepest ever observed by skill).
+  - TRUMP (mint 5mxCrbnh...): 169 unique buyer wallets, all first-5 timestamps at unix 1779413169 (same second). 0 sells. Pool already drained to 19 SOL — sniper rush already played out.
+- relationship to existing rules: amplifies bootstrap §2d.3 "Strong negative: first-5 within 60s = sniper coordination". C3's specific contribution: it warns that the **buyer count** signal (bootstrap "Strong positive: >50 buyers") can NOT be trusted in isolation — when spread is tight, sniper coordination DOMINATES the count positive. The signals don't cancel; the negative overrides.
+- why this matters: explains why pump.fun graduations with apparently-strong buyer engagement (50, 80, 169 unique wallets) still consistently dump post-grad. The buyers are extractors, not investors.
+- pending validation: CR7 (WATCH this run) audited at ~02:07 UTC 2026-05-23 — if it decays or rugs, C3 gets its first confirm.
 
 # Smart-wallet registry (auto-maintained, top-30 by winner_hits)
 
