@@ -1,15 +1,15 @@
 ---
-version: 7
-last_updated: 2026-05-22T17:49:16Z
-total_decisions_audited: 3
-total_picks_audited: 3
+version: 8
+last_updated: 2026-05-22T21:57:46Z
+total_decisions_audited: 4
+total_picks_audited: 4
 overall_buy_hit_rate: null  # no BUYs yet; cannot compute
-watch_hit_rate_all_time: 0.0  # 0 of 3 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%)
+watch_hit_rate_all_time: 0.0  # 0 of 4 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%, -25.1%)
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
-cohort_avg_return_to_date: -0.948  # mean across 3 WATCH audits
-trend: cold_start  # 3 audits is too few for trend; need 7+ days for the health check
-c1_confirms: 1
+cohort_avg_return_to_date: -0.774  # mean across 4 WATCH audits (was -94.8% over 3; NATRO -25.1% pulled it up)
+trend: cold_start  # 4 audits is too few for trend; need 7+ days for the health check
+c1_confirms: 2  # MEMEWC (-99.5%) + NATRO (-25.1%); 1 more for VALIDATED promotion
 c1_disconfirms: 0
 c2_confirms: 0
 c2_disconfirms: 0
@@ -40,10 +40,12 @@ _(none yet — populated by Phase 1 audits)_
 
 `if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP (or at most WATCH).
 
-- status: CANDIDATE (1/3 audit confirms — 2/3 needed to promote VALIDATED)
-- confirms: **1** (MEMEWC audit at 13:38 UTC 2026-05-22: entered with ATH/MC=89×, lost −99.5% in 24h. Pool drained from 351.4 SOL to 26.3 SOL = 92.5% drain.)
+- status: CANDIDATE (2/3 audit confirms — 1 more needed to promote VALIDATED)
+- confirms: **2**
+  - MEMEWC audit 2026-05-22T13:38:11Z: entered with ATH/MC=89× (mid range), realized −99.5%, pool drained 92.5%.
+  - NATRO audit 2026-05-22T21:57:46Z: entered with ATH/MC=232× (extreme range), realized −25.1%, pool drained 41.8%. **Magnitude nuance discovered**: higher C1 ratio correlated with *smaller* 24h decay — possible "post-dump residual = more-stable" effect at extreme ratios. See outcome file for the hypothesis.
 - disconfirms: 0
-- last_confirmed_at: 2026-05-22T13:38:11Z
+- last_confirmed_at: 2026-05-22T21:57:46Z
 - first_observed: 2026-05-21T13:25:17Z
 - observation_count: **22** (5 × 4 cohorts + 2 in the 12:33 mini-run after Dune recovery)
 - evidence: 22 of 22 shortlisted tokens triggered this ratio at entry. Min seen: **87.9×** (CR7). Max seen: **21,847×** (TRUMP). All audited so far have realized return < 0 (cohort avg −94.8% across 3 audits: HANE6NAj −86.8%, ApGBE2Qk −97.9%, MEMEWC −99.5%). **No counter-example in 22 consecutive observations and 1/3 audits.**
