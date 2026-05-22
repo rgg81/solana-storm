@@ -1,7 +1,7 @@
 ---
-version: 6
-last_updated: 2026-05-22T13:38:11Z
-total_decisions_audited: 2
+version: 7
+last_updated: 2026-05-22T17:49:16Z
+total_decisions_audited: 3
 total_picks_audited: 3
 overall_buy_hit_rate: null  # no BUYs yet; cannot compute
 watch_hit_rate_all_time: 0.0  # 0 of 3 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%)
@@ -9,8 +9,12 @@ buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
 cohort_avg_return_to_date: -0.948  # mean across 3 WATCH audits
 trend: cold_start  # 3 audits is too few for trend; need 7+ days for the health check
-c1_confirms: 1  # first audit-grade confirmation from MEMEWC -99.5% (2026-05-22)
+c1_confirms: 1
 c1_disconfirms: 0
+c2_confirms: 0
+c2_disconfirms: 0
+c3_confirms: 0
+c3_disconfirms: 0
 ---
 
 # pump-prediction skill — rolling lessons & smart-wallet registry
@@ -72,8 +76,10 @@ _(none yet — populated by Phase 1 audits)_
   - `6iPahKgzFBQphxDrzD81etdExgR2qNDJUDECGDzqtBpv` (SOCCER-pair, 5 grads/24h)
   - `BnnNJJgy9w2MLQ9XBKJKG9FQa2r9qdW7u5VpzEkwUcc3` (FOID/GAME/MILHOUSE, 11 grads/24h)
   - `dshAybqFXYVVTd4mzy9Uk6KD7km8wE9iZgPMYZdzEXc` (SPIG/24/MESSI/NPC, 12 grads/24h)
-  - `28kDW9j49yH1gYmtK3mGsnoejfq5sP8mCy8GAzocWd59` (Rick67/WRLD, 2 grads/24h, NEW)
-  - `9C4nRvhhVquCKA…` (MEGA-FARMER, 65 grads/24h, NEW)
+  - `28kDW9j49yH1gYmtK3mGsnoejfq5sP8mCy8GAzocWd59` (Rick67/WRLD)
+  - `9C4nRvhhVquCKA…` (was 65 grads/24h on 2026-05-21; now dormant per 17:49 UTC check, but keeping for re-emergence detection)
+  - `ALmPdNyqSi1uidTdwZ1xbLhWpsWJEMsatSQpQX7RuSLw` (promoted 17:49 UTC 2026-05-22 after 5 grads/24h, crossing the ≥5 threshold)
+  - Watching for promotion: `8FiuwM6FmVKmBL…` (8 grads/24h at 17:49 UTC, will promote on next +1 confirm), `LfEcaUf77iEhnz…` (5 grads/24h, borderline)
 - detection: group `recent_graduations` rows by `deployer_wallet`; SKIP any with ≥2 rows in 24h OR any wallet in known-farmer registry. **Future helper improvement**: filter at the Dune query level to avoid wasting Helius credits enriching tokens that will be C2-rejected.
 
 ## C3 — High unique_buyer_count is misleading when first-5 spread is tight
