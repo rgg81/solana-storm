@@ -1,14 +1,16 @@
 ---
-version: 5
-last_updated: 2026-05-22T09:52:57Z
-total_decisions_audited: 1
-total_picks_audited: 2
+version: 6
+last_updated: 2026-05-22T13:38:11Z
+total_decisions_audited: 2
+total_picks_audited: 3
 overall_buy_hit_rate: null  # no BUYs yet; cannot compute
-watch_hit_rate_all_time: 0.0  # 0 of 2 audited WATCHes hit >=1.0×
+watch_hit_rate_all_time: 0.0  # 0 of 3 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%)
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
-cohort_avg_return_first_audit: -0.9234  # average across 2 WATCH picks audited
-trend: cold_start
+cohort_avg_return_to_date: -0.948  # mean across 3 WATCH audits
+trend: cold_start  # 3 audits is too few for trend; need 7+ days for the health check
+c1_confirms: 1  # first audit-grade confirmation from MEMEWC -99.5% (2026-05-22)
+c1_disconfirms: 0
 ---
 
 # pump-prediction skill — rolling lessons & smart-wallet registry
@@ -34,13 +36,13 @@ _(none yet — populated by Phase 1 audits)_
 
 `if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP (or at most WATCH).
 
-- status: CANDIDATE
-- confirms: 0 (audit-based, needs 3 to promote VALIDATED)
+- status: CANDIDATE (1/3 audit confirms — 2/3 needed to promote VALIDATED)
+- confirms: **1** (MEMEWC audit at 13:38 UTC 2026-05-22: entered with ATH/MC=89×, lost −99.5% in 24h. Pool drained from 351.4 SOL to 26.3 SOL = 92.5% drain.)
 - disconfirms: 0
-- last_confirmed_at: null
+- last_confirmed_at: 2026-05-22T13:38:11Z
 - first_observed: 2026-05-21T13:25:17Z
-- observation_count: **20** (5 × 4 cohorts: 13-25, 17-40, 22-00, 02-07)
-- evidence: 20 of 20 shortlisted tokens triggered this ratio. Min seen: **87.9×** (CR7 in 02:07 run, new low — was the most BUY-attractive candidate yet by other signals). Max seen: **21,847×** (TRUMP in 02:07 run, new high). The bonding curve consistently extracts the price peak; AMM phase is decay. **No counter-example in 20 consecutive observations.**
+- observation_count: **22** (5 × 4 cohorts + 2 in the 12:33 mini-run after Dune recovery)
+- evidence: 22 of 22 shortlisted tokens triggered this ratio at entry. Min seen: **87.9×** (CR7). Max seen: **21,847×** (TRUMP). All audited so far have realized return < 0 (cohort avg −94.8% across 3 audits: HANE6NAj −86.8%, ApGBE2Qk −97.9%, MEMEWC −99.5%). **No counter-example in 22 consecutive observations and 1/3 audits.**
 - why this is novel: The static-features ML iterations ([[phase3-backtest-result]], [[pivot-price-prediction-result]], [[stop-loss-strategy-result]]) had no access to pumpfun's ATH field. This is a dynamic feature unique to the per-invocation skill.
 
 ## C2 — Same-deployer multi-graduation farming (expanded)
