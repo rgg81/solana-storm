@@ -1,11 +1,13 @@
 ---
-version: 4
-last_updated: 2026-05-22T02:07:33Z
-total_decisions_audited: 0
-total_picks_audited: 0
-overall_buy_hit_rate: null
+version: 5
+last_updated: 2026-05-22T09:52:57Z
+total_decisions_audited: 1
+total_picks_audited: 2
+overall_buy_hit_rate: null  # no BUYs yet; cannot compute
+watch_hit_rate_all_time: 0.0  # 0 of 2 audited WATCHes hit >=1.0×
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
+cohort_avg_return_first_audit: -0.9234  # average across 2 WATCH picks audited
 trend: cold_start
 ---
 
