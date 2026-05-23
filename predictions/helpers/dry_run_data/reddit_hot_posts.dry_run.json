@@ -1,0 +1,19 @@
+{
+  "data": {
+    "tickers_queried": ["STORM"],
+    "posts": [
+      {
+        "subreddit": "Cryptomoonshots",
+        "title": "$STORM is the next 100x — DYOR",
+        "author": "exampleuser",
+        "created_utc": 1716290000,
+        "score": 47,
+        "num_comments": 12,
+        "permalink": "/r/Cryptomoonshots/comments/abc/example/",
+        "matched_tickers": ["STORM"]
+      }
+    ],
+    "fetched_at_unix": 1716293000
+  },
+  "error": null
+}
