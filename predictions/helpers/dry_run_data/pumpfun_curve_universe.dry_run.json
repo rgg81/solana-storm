@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "mint": "EXAMPLECurveMint11111111111111111111111111pump",
+      "bonding_curve_pct": 72.4,
+      "market_cap_sol": 48.2,
+      "creator_wallet": "ExampleCreator111111111111111111111111111111",
+      "created_timestamp_unix": 1716290000,
+      "reply_count": 12,
+      "recent_trades_count": 47,
+      "last_trade_timestamp_unix": 1716293400,
+      "name": "Example Curve Token",
+      "symbol": "EXMP",
+      "nsfw": false,
+      "is_banned": false
+    }
+  ],
+  "fetched_at_unix": 1716293500,
+  "pages_fetched": 1,
+  "error": null
+}
