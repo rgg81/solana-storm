@@ -14,11 +14,18 @@ You are operating the v2 multi-agent pump.fun fund. The user invokes you once; y
 - `PUMP_V2_HALT=1` env var halts everything on next tick (kill switch). Check at top of each tick.
 - Hard stop conditions: explicit user "stop" / 30+ audits with declining 7d hit rate / past 2026-06-23 with no edge / 5+ consecutive infra failures (Helius + Dune both down).
 
-## Per-tick decision: chain or run?
+## Per-tick decision: chain, lightweight, or full?
 
-1. Find newest non-SKIPPED FM decision file: `predictions/diary/decisions/<ts>-fund_manager.md`
-2. If less than 4 hours have passed since its mtime: **CHAIN ONLY** — `ScheduleWakeup(3600s, reason="Chain step N/4 toward next pump-fund tick", prompt=<same /pump-fund self-instruction>)` and end the turn.
-3. If ≥4 hours have passed (or no FM file exists yet): **RUN THE TICK** as below.
+B-phase introduces a two-cadence model:
+- **Lightweight tick** (every 15 min): universe_fetch + audit_tick + late_curve specialist only. Catches curve-momentum windows that the 4h cycle would miss. Persists late_curve picks to a buffer for the next FM consolidation.
+- **Full tick** (every 4 hours): everything above PLUS early_curve + smart_mirror + catalyst + FM. Consolidates the accumulated buffer into a final FM decision.
+
+Decision logic:
+1. Find newest FM decision file: `predictions/diary/decisions/<ts>-fund_manager.md`.
+2. Find newest LIGHTWEIGHT decision file: `predictions/diary/decisions/<ts>-late_curve.md` (any).
+3. Elapsed-since-FM ≥ 4h: **RUN FULL TICK** (Phases 1-6 below).
+4. Elapsed-since-FM < 4h AND elapsed-since-late_curve ≥ 15min: **RUN LIGHTWEIGHT TICK** (Phases 1+2+3a only, then schedule next).
+5. Otherwise: **CHAIN ONLY** — `ScheduleWakeup(900s)` and end the turn. (Use 900s = 15min, not 3600s, to keep the lightweight cadence tight.)
 
 ## Phase 1 — Audit (process due picks)
 
@@ -113,22 +120,64 @@ else:
     catalyst_extras["cryptopanic_feed"] = {"data": None, "error": "no eligible tickers in universe"}
     catalyst_extras["reddit_hot_posts"] = {"data": None, "error": "no eligible tickers in universe"}
 
+# B-phase enrichment: for each top-15 pregrad candidate (sorted by curve %),
+# fetch /coins/<mint> via pumpfun_coin_detail to get full curve state +
+# ath_mc_ratio (C1 input). For early-curve candidates (10-30% range),
+# additionally call helius_holder_distribution for top-10 holder pct
+# (early_curve BUY HIGH/MEDIUM gate).
+pregrad_data = (pregrad or {}).get("data") or []
+pregrad_data.sort(key=lambda r: -(r.get("bonding_curve_pct") or 0))
+top_candidates = pregrad_data[:15]
+
+enrichment = {}  # mint -> {coin_detail, holder_dist}
+for c in top_candidates:
+    mint = c.get("mint", "")
+    if not mint: continue
+    enr = {}
+    try:
+        r = subprocess.run(["python3","predictions/helpers/pumpfun_coin_detail.py", mint],
+                           capture_output=True, text=True, timeout=30)
+        d = json.loads(r.stdout) if r.stdout.strip() else {}
+        enr["coin_detail"] = d.get("data") or {"error": d.get("error")}
+    except Exception as e:
+        enr["coin_detail"] = {"error": str(e)}
+    # Holder distribution only for early-curve range (saves Helius credits)
+    cp_pct = c.get("bonding_curve_pct") or 0
+    if 10 <= cp_pct < 30:
+        try:
+            r = subprocess.run(["python3","predictions/helpers/helius_holder_distribution.py", mint],
+                               capture_output=True, text=True, timeout=30)
+            d = json.loads(r.stdout) if r.stdout.strip() else {}
+            enr["holder_dist"] = d.get("data") or {"error": d.get("error")}
+        except Exception as e:
+            enr["holder_dist"] = {"error": str(e)}
+    enrichment[mint] = enr
+
+print(f"enrichment: {sum(1 for e in enrichment.values() if 'coin_detail' in e and not e['coin_detail'].get('error'))}/{len(enrichment)} got coin_detail, {sum(1 for e in enrichment.values() if 'holder_dist' in e and not e['holder_dist'].get('error'))} got holder_dist")
+
 for spec in ("late_curve", "early_curve", "smart_mirror", "catalyst"):
-    extras = catalyst_extras if spec == "catalyst" else {}
+    # Per-specialist extras include the relevant enrichment slice
+    if spec == "catalyst":
+        extras = catalyst_extras
+    elif spec in ("late_curve", "early_curve"):
+        extras = {"per_token_enrichment": enrichment}
+    else:
+        extras = {}
     ctx = invoker.build_context(
         spec,
-        universe={"pregrad": pregrad, "graduated": graduated},
-        curve_history={},  # specialists request specific mints' history via the curve_history field as needed
+        universe={"pregrad": pregrad_data[:25], "graduated": (graduated.get("data") or [])[:10]},
+        curve_history={},
         extras=extras,
     )
     out = (Path("/tmp") / f"prompt_{spec}.txt")
     template = ctx["prompt_template"]
     inputs = json.dumps({"universe": ctx["universe"], "extras": ctx["extras"]}, indent=2)
-    prompt = (f"{template}\n\n## Current inputs\n```json\n{inputs}\n```\n\n"
-              f"## Current lessons.md\n```markdown\n{lessons_md}\n```\n\n"
+    lessons_slim = lessons_md[:6000]
+    prompt = (f"{template}\n\n## Current inputs (B-phase: enrichment includes per-token coin_detail + holder_dist for early-curve)\n```json\n{inputs}\n```\n\n"
+              f"## Current lessons.md (truncated)\n```markdown\n{lessons_slim}\n```\n\n"
               f"Respond with the JSON output object only.")
     out.write_text(prompt)
-    print(f"wrote {out}")
+    print(f"  {spec}: {len(prompt):,} chars (~{len(prompt)//4} tokens)")
 PY
 ```
 
