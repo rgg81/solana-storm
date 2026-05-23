@@ -88,9 +88,10 @@ def check_configuration() -> list[dict]:
     """Static config must be valid."""
     issues = []
     
-    # C1: All 5 agent prompts present
-    required = ["universe_scout.md", "market_analyst.md", "solana_expert.md",
-                 "risk_manager.md", "portfolio_mgr.md"]
+    # C1: All 6 agent prompts present (MA split: optimist + pessimist)
+    required = ["universe_scout.md",
+                 "market_analyst_optimist.md", "market_analyst_pessimist.md",
+                 "solana_expert.md", "risk_manager.md", "portfolio_mgr.md"]
     for r in required:
         if not (AGENTS_DIR / r).exists():
             issues.append(bugs.log("CRITICAL", "config",
@@ -133,13 +134,20 @@ def check_configuration() -> list[dict]:
 def check_recent_tick_outputs() -> list[dict]:
     """Validate the most recent agent output JSONs."""
     issues = []
-    for fname, schema_keys in [
+    # Accept either single-MA (legacy tick 1) or split-MA outputs
+    files_to_check = [
         ("/tmp/smaf_universe.json", ["selected_symbols"]),
-        ("/tmp/smaf_market_analyst.json", ["scores"]),
         ("/tmp/smaf_solana_expert.json", ["scores"]),
         ("/tmp/smaf_risk.json", ["account_gate", "new_entry_recommendations"]),
         ("/tmp/smaf_pm.json", ["trades", "account_state_pre"]),
-    ]:
+    ]
+    # MA: split or unified
+    if Path("/tmp/smaf_market_analyst_optimist.json").exists():
+        files_to_check.append(("/tmp/smaf_market_analyst_optimist.json", ["scores"]))
+        files_to_check.append(("/tmp/smaf_market_analyst_pessimist.json", ["scores"]))
+    elif Path("/tmp/smaf_market_analyst.json").exists():
+        files_to_check.append(("/tmp/smaf_market_analyst.json", ["scores"]))
+    for fname, schema_keys in files_to_check:
         p = Path(fname)
         if not p.exists():
             issues.append(bugs.log("LOW", "agents",

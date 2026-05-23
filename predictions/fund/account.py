@@ -64,23 +64,34 @@ def save(state: dict) -> None:
 
 
 def mark_to_market(state: dict, prices: dict[str, float]) -> dict:
-    """Compute equity = cash + sum(holdings.units × current_price)."""
+    """Compute equity = cash + sum(holdings.units × current_price).
+
+    When a price is missing for an open position, mark at AVG ENTRY PRICE as
+    a conservative fallback (rather than zeroing the position). The mark is
+    flagged stale=True so callers know.
+    """
     holdings_value = 0.0
     pos = {}
     for ticker, h in state["holdings"].items():
         price = prices.get(ticker)
         units = h["units"]
-        if price is None or units == 0:
-            pos[ticker] = {"units": units, "current_price": price, "market_value_usd": 0.0,
+        if units == 0:
+            pos[ticker] = {"units": 0, "current_price": price, "market_value_usd": 0.0,
                             "cost_basis_usd": h.get("cost_basis_usd", 0.0),
-                            "unrealized_pnl_usd": 0.0, "unrealized_pnl_pct": 0.0}
+                            "unrealized_pnl_usd": 0.0, "unrealized_pnl_pct": 0.0, "stale": False}
             continue
+        stale = False
+        if price is None:
+            # Fall back to avg entry price (mark at cost) so equity doesn't artificially crater
+            price = h.get("avg_entry_price_usd") or (h.get("cost_basis_usd", 0) / units if units else 0)
+            stale = True
         mv = units * price
         pnl = mv - h.get("cost_basis_usd", 0.0)
         pnl_pct = (pnl / h["cost_basis_usd"]) if h.get("cost_basis_usd") else 0.0
         pos[ticker] = {"units": units, "current_price": price, "market_value_usd": mv,
                         "cost_basis_usd": h["cost_basis_usd"],
-                        "unrealized_pnl_usd": pnl, "unrealized_pnl_pct": pnl_pct}
+                        "unrealized_pnl_usd": pnl, "unrealized_pnl_pct": pnl_pct,
+                        "stale": stale}
         holdings_value += mv
     equity = state["cash_usd"] + holdings_value
     drawdown = (equity / state["peak_equity_usd"] - 1.0) if state["peak_equity_usd"] > 0 else 0.0
