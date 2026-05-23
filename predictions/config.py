@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import os
 import pathlib as _pathlib
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Auto-load .env so helpers work when invoked directly (e.g. python3 helper.py).
 try:
@@ -86,3 +89,23 @@ DECISIONS_DIR = DIARY_DIR / "decisions"
 OUTCOMES_DIR = DIARY_DIR / "outcomes"
 LESSONS_FILE = DIARY_DIR / "lessons.md"
 DRY_RUN_DIR = _ROOT / "helpers" / "dry_run_data"
+
+# --- v2 additions ---
+CRYPTOPANIC_API_TOKEN = os.environ.get("CRYPTOPANIC_API_TOKEN", "").strip()
+PUMP_V2_HALT = os.environ.get("PUMP_V2_HALT", "0").strip() == "1"
+
+# Paths (no automatic mkdir; the relevant modules create their own dirs)
+STATE_DIR = _REPO_ROOT / "predictions" / "state"
+SHADOW_WATCH_DIR = _REPO_ROOT / "predictions" / "diary" / "shadow_watches"
+PENDING_AUDIT_PATH = _REPO_ROOT / "predictions" / "audit" / "pending.jsonl"
+CURVE_HISTORY_DB = STATE_DIR / "curve_history.db"
+SMART_WALLET_DB = STATE_DIR / "smart_wallet_registry.db"
+SPECIALIST_STATS_PATH = STATE_DIR / "specialist_stats.json"
+LAST_FM_CYCLE_PATH = STATE_DIR / "last_fm_cycle.txt"
+ERROR_LOG_PATH = STATE_DIR / "error_log.jsonl"
+
+# v2 helper config
+REDDIT_SUBS = ["CryptoCurrency", "solana", "Cryptomoonshots", "SatoshiStreetBets"]
+PUMPFUN_CURVE_BASE = "https://frontend-api-v3.pump.fun"
+CRYPTOPANIC_BASE = "https://cryptopanic.com/api/v1"
+CACHE_DIR = _REPO_ROOT / "predictions" / ".cache"

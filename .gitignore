@@ -23,3 +23,11 @@ predictions/diary/decisions/*.md
 predictions/diary/outcomes/*.md
 predictions/.cache/
 predictions/telegram.session*
+
+# v2 additions
+predictions/state/*.db
+predictions/state/*.json
+predictions/state/*.txt
+predictions/state/*.jsonl
+predictions/diary/shadow_watches/*.md
+predictions/audit/pending.jsonl
