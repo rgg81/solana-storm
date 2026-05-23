@@ -1,0 +1,32 @@
+{
+  "data": {
+    "mint": "8y45AJzCXLcdtsv3SaR4G6dkj1KMZH9aZS3uPMhqXuY9",
+    "symbol": "STORM",
+    "name": "Solana Storm",
+    "creator_wallet": "DEPLOY_FAKE_8y45",
+    "bonding_curve_pct": 72.35,
+    "complete": false,
+    "virtual_sol_reserves_lamports": 91500000000,
+    "virtual_token_reserves": 750000000000000,
+    "real_sol_reserves_lamports": 61500000000,
+    "real_token_reserves": 280000000000000,
+    "total_supply": 1000000000000000,
+    "curve_price_sol_per_token": 0.000122,
+    "market_cap_sol": 12.2,
+    "market_cap_usd": 1830.0,
+    "ath_market_cap_usd": 6420.0,
+    "ath_mc_ratio": 3.508,
+    "reply_count": 22,
+    "last_trade_timestamp_unix": 1716459620,
+    "last_trade_age_sec": 95,
+    "socials": {
+      "telegram": "https://t.me/SolanaStorm",
+      "twitter": "https://x.com/SolanaStorm",
+      "website": "https://solanastorm.example"
+    },
+    "nsfw": false,
+    "is_banned": false,
+    "fetched_at_unix": 1716459715
+  },
+  "error": null
+}
