@@ -87,7 +87,9 @@ def _extract_posts(body: dict, sub: str, since_unix: int, ticker_patterns: list[
 
 def _live_query(tickers: list[str], max_age_sec: int) -> dict:
     since = int(time.time()) - max_age_sec
-    patterns = [(t, re.compile(rf"[\$#]?{re.escape(t)}\b", re.IGNORECASE)) for t in tickers]
+    # Word boundary on BOTH sides so 'STORM' doesn't match inside 'antstorm'.
+    # \b after the prefix handles the left boundary correctly when $ or # is absent.
+    patterns = [(t, re.compile(rf"(?:^|[^A-Za-z0-9_])[\$#]?{re.escape(t)}\b", re.IGNORECASE)) for t in tickers]
     all_posts: list[dict] = []
     for sub in config.REDDIT_SUBS:
         for sort in ("new", "hot"):

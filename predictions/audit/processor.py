@@ -62,7 +62,9 @@ def write_outcome(pick_id: str, payload: dict) -> Path:
     out_path = out_dir / f"{pick_id}-outcome.md"
     body = "---\n"
     for k, v in payload.items():
-        body += f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float, bool)) else v}\n"
+        # Strings + numbers stay raw; everything else (including booleans and containers) goes through json.dumps
+        # so 'true'/'false' are YAML-canonical and embedded dicts/lists round-trip safely.
+        body += f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float)) else v}\n"
     body += "---\n"
     tmp = out_path.with_suffix(".tmp")
     tmp.write_text(body)
@@ -158,10 +160,13 @@ def process_due_audits(*, now_unix: int, lessons_path) -> int:
         total += 1
         processed += 1
 
-    fm["total_picks_audited"] = total
-    fm["version"] = int(fm.get("version") or 0) + 1
-    fm["last_updated"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(now_unix))
-    lessons_io.write(lessons_path, fm, lessons_io.load_body(lessons_path))
+    # Only rewrite lessons.md if we actually processed anything — avoids spurious
+    # version bumps + last_updated churn on idle audit-tick fires (cron runs every 10min).
+    if processed > 0:
+        fm["total_picks_audited"] = total
+        fm["version"] = int(fm.get("version") or 0) + 1
+        fm["last_updated"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(now_unix))
+        lessons_io.write(lessons_path, fm, lessons_io.load_body(lessons_path))
 
     rewrite(config.PENDING_AUDIT_PATH, remaining)
     return processed

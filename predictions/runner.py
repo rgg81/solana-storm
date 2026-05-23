@@ -55,7 +55,9 @@ def _run_specialist(name: str):
     decisions_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y-%m-%d-%H-%M", time.gmtime())
     out = decisions_dir / f"{ts}-{name}.md"
-    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float, bool)) else v}"
+    # Strings + numbers stay raw; everything else (including booleans and containers) goes through json.dumps
+    # so 'true'/'false' are YAML-canonical and embedded dicts/lists round-trip safely.
+    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float)) else v}"
                                 for k, v in result.items()) + "\n---\n"
     tmp = out.with_suffix(".tmp")
     tmp.write_text(body)
@@ -71,7 +73,9 @@ def _run_fund_manager():
     decisions_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y-%m-%d-%H-%M", time.gmtime())
     out = decisions_dir / f"{ts}-fund_manager.md"
-    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float, bool)) else v}"
+    # Strings + numbers stay raw; everything else (including booleans and containers) goes through json.dumps
+    # so 'true'/'false' are YAML-canonical and embedded dicts/lists round-trip safely.
+    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float)) else v}"
                                 for k, v in result.items()) + "\n---\n"
     tmp = out.with_suffix(".tmp")
     tmp.write_text(body)

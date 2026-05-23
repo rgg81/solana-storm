@@ -65,12 +65,9 @@ def _live_query(pages: int, limit: int) -> dict:
                 continue
             try:
                 vs = coin.get("virtual_sol_reserves") or 0
-                rs = coin.get("real_sol_reserves") or 0
-                tot = coin.get("total_supply") or 0
-                if tot:
-                    cap_sol = (vs / tot) * (coin.get("total_supply") or 0) / 1e9
-                else:
-                    cap_sol = (coin.get("market_cap") or 0) / 1e9
+                # Note: market cap is reported directly by pump.fun on most coins as `market_cap_sol`;
+                # we use virtual_sol_reserves / 1e9 only as a fallback when the API omits it.
+                cap_sol = (vs / 1e9) if vs else (coin.get("market_cap") or 0) / 1e9
             except Exception:
                 cap_sol = 0.0
             try:
