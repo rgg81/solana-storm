@@ -41,12 +41,9 @@ def _run_universe_fetch():
 
 def _run_audit_tick():
     from predictions.audit import processor
-    due, remaining = processor.partition_due(config.PENDING_AUDIT_PATH, now_unix=int(time.time()))
-    print(f"audit_tick: {len(due)} due, {len(remaining)} pending")
-    # Actual outcome resolution: delegated to per-pick logic in audit/processor.py extensions
-    # (Stub here — Task 19's integration test covers end-to-end.)
-    if due:
-        processor.rewrite(config.PENDING_AUDIT_PATH, remaining)
+    lessons = config._REPO_ROOT / "predictions" / "diary" / "lessons.md"
+    n = processor.process_due_audits(now_unix=int(time.time()), lessons_path=lessons)
+    print(f"audit_tick: processed {n} due audits")
     return 0
 
 
