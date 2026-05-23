@@ -1,19 +1,21 @@
 ---
-version: 8
-last_updated: 2026-05-22T21:57:46Z
-total_decisions_audited: 4
-total_picks_audited: 4
+version: 9
+last_updated: 2026-05-23T02:07:35Z
+total_decisions_audited: 5
+total_picks_audited: 5
 overall_buy_hit_rate: null  # no BUYs yet; cannot compute
-watch_hit_rate_all_time: 0.0  # 0 of 4 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%, -25.1%)
+watch_hit_rate_all_time: 0.0  # 0 of 5 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%, -25.1%, -99.7%)
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
-cohort_avg_return_to_date: -0.774  # mean across 4 WATCH audits (was -94.8% over 3; NATRO -25.1% pulled it up)
-trend: cold_start  # 4 audits is too few for trend; need 7+ days for the health check
-c1_confirms: 2  # MEMEWC (-99.5%) + NATRO (-25.1%); 1 more for VALIDATED promotion
+cohort_avg_return_to_date: -0.819  # mean across 5 WATCH audits
+trend: cold_start
+c1_status: VALIDATED  # promoted 2026-05-23T02:07:35Z after 3 confirms (MEMEWC, NATRO, CR7)
+c1_confirms: 3
 c1_disconfirms: 0
 c2_confirms: 0
 c2_disconfirms: 0
-c3_confirms: 0
+c3_status: CANDIDATE  # 1/3 confirms
+c3_confirms: 1  # CR7 audit confirmed mass-sniper-coord = SKIP
 c3_disconfirms: 0
 ---
 
@@ -32,24 +34,27 @@ falls back to the bootstrap heuristics defined in
 
 # Validated lessons (status: VALIDATED, ≥3 confirms — input to every Phase 2)
 
-_(none yet — populated by Phase 1 audits)_
-
-# Candidate lessons (status: CANDIDATE, 1–2 audits, pending confirmation)
-
 ## C1 — Post-peak entry: ATH ≫ current MC means the bonding-curve top has already been printed
 
-`if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP (or at most WATCH).
+`if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP.
 
-- status: CANDIDATE (2/3 audit confirms — 1 more needed to promote VALIDATED)
-- confirms: **2**
-  - MEMEWC audit 2026-05-22T13:38:11Z: entered with ATH/MC=89× (mid range), realized −99.5%, pool drained 92.5%.
-  - NATRO audit 2026-05-22T21:57:46Z: entered with ATH/MC=232× (extreme range), realized −25.1%, pool drained 41.8%. **Magnitude nuance discovered**: higher C1 ratio correlated with *smaller* 24h decay — possible "post-dump residual = more-stable" effect at extreme ratios. See outcome file for the hypothesis.
+- status: **VALIDATED** (promoted 2026-05-23T02:07:35Z after 3 audit confirms)
+- confirms: **3**
+  - **MEMEWC** audit 2026-05-22T13:38:11Z: entered ATH/MC=**89×** (mid), realized **−99.5%**, pool drained 92.5%.
+  - **NATRO** audit 2026-05-22T21:57:46Z: entered ATH/MC=**232×** (extreme), realized **−25.1%**, pool drained 41.8%.
+  - **CR7** audit 2026-05-23T02:07:35Z: entered ATH/MC=**87.9×** (mid), realized **−99.7%**, pool drained 94.8%.
 - disconfirms: 0
-- last_confirmed_at: 2026-05-22T21:57:46Z
+- last_confirmed_at: 2026-05-23T02:07:35Z
 - first_observed: 2026-05-21T13:25:17Z
-- observation_count: **22** (5 × 4 cohorts + 2 in the 12:33 mini-run after Dune recovery)
-- evidence: 22 of 22 shortlisted tokens triggered this ratio at entry. Min seen: **87.9×** (CR7). Max seen: **21,847×** (TRUMP). All audited so far have realized return < 0 (cohort avg −94.8% across 3 audits: HANE6NAj −86.8%, ApGBE2Qk −97.9%, MEMEWC −99.5%). **No counter-example in 22 consecutive observations and 1/3 audits.**
+- observation_count (entry-time): 23 of 23 shortlisted tokens triggered this ratio. Range 87.9× to 21,847×. No counter-example.
+- audit-time outcomes: 5 of 5 WATCH/BUY-eligible audits showed realized_return < 0 (3 mid-C1 averaging -99.0%; 1 extreme-C1 at -25.1%; 2 pre-pumpfun WATCHes averaging -92.4%).
+- **Magnitude regime sub-rule** (working model, not yet a separate VALIDATED lesson):
+  - **C1-mid (10× ≤ ATH/MC < 200×)**: hard SKIP — actively bleeding. Expected realized: ~-99% in 24h. Confirmed in 3 of 3 cases (MEMEWC, CR7, and the 2 pre-pumpfun picks which by inference fall here).
+  - **C1-extreme (ATH/MC ≥ 200×)**: SKIP — but post-dump residual phase. Expected realized: ~-25% to -50% in 24h. Confirmed 1 of 1 case (NATRO).
+  - NOAR audit at ~17:49 UTC today will be the 4th mid-C1 test (with organic arrival vs CR7's sniper-coord) — disambiguates whether arrival pattern can rescue mid-C1.
 - why this is novel: The static-features ML iterations ([[phase3-backtest-result]], [[pivot-price-prediction-result]], [[stop-loss-strategy-result]]) had no access to pumpfun's ATH field. This is a dynamic feature unique to the per-invocation skill.
+
+# Candidate lessons (status: CANDIDATE, 1–2 audits, pending confirmation)
 
 ## C2 — Same-deployer multi-graduation farming (expanded)
 
@@ -88,15 +93,16 @@ _(none yet — populated by Phase 1 audits)_
 
 `if unique_buyer_count >= 50 AND (first-5 buy timestamps span ≤ 60 seconds)` → SKIP. The "buyers" are sniper-bot wallets owned by a smaller operator pool, racing for the migration-arbitrage opportunity. They are NOT 50+ organic retail buyers.
 
-- status: CANDIDATE
-- confirms: 0 (audit-based, needs 3 to promote VALIDATED)
+- status: CANDIDATE (1/3 audit confirms — 2 more needed to promote VALIDATED)
+- confirms: **1**
+  - CR7 audit 2026-05-23T02:07:35Z: entered with 84 unique buyer wallets in 1-second window (C3-firing), realized **−99.7%**, pool drained 94.8%. The 84 sniper-bot wallets exited en masse; LP wrecked.
 - disconfirms: 0
-- last_confirmed_at: null
+- last_confirmed_at: 2026-05-23T02:07:35Z
 - first_observed: 2026-05-22T02:07:33Z
-- observation_count: **2** (CR7 + TRUMP in 02:07 run)
+- observation_count: **2** entry-time observations (CR7 + TRUMP in 02:07 run); 1/2 audited so far (TRUMP was SKIPped, didn't generate audit).
 - evidence:
-  - CR7 (mint AgHh16tz...): 84 unique buyer wallets, all first-5 timestamps within 1 second (1779415631–1779415632). 0 sells. 356 SOL pool (deepest ever observed by skill).
-  - TRUMP (mint 5mxCrbnh...): 169 unique buyer wallets, all first-5 timestamps at unix 1779413169 (same second). 0 sells. Pool already drained to 19 SOL — sniper rush already played out.
+  - CR7 (mint AgHh16tz...): 84 unique buyer wallets, all first-5 timestamps within 1 second. **AUDITED: -99.7%** — confirms C3.
+  - TRUMP (mint 5mxCrbnh...): 169 unique buyer wallets, all first-5 timestamps at unix 1779413169. SKIPped, not audited. Pool already drained to 19 SOL at decision time — sniper rush already played out.
 - relationship to existing rules: amplifies bootstrap §2d.3 "Strong negative: first-5 within 60s = sniper coordination". C3's specific contribution: it warns that the **buyer count** signal (bootstrap "Strong positive: >50 buyers") can NOT be trusted in isolation — when spread is tight, sniper coordination DOMINATES the count positive. The signals don't cancel; the negative overrides.
 - why this matters: explains why pump.fun graduations with apparently-strong buyer engagement (50, 80, 169 unique wallets) still consistently dump post-grad. The buyers are extractors, not investors.
 - pending validation: CR7 (WATCH this run) audited at ~02:07 UTC 2026-05-23 — if it decays or rugs, C3 gets its first confirm.
