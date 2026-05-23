@@ -102,6 +102,66 @@ def _fetch_current_pool_state(mint: str, pool: str) -> dict:
                 "pool_closed": True}
 
 
+def _fetch_curve_state(mint: str) -> dict:
+    """Run pumpfun_coin_detail.py to read current bonding-curve state.
+
+    Returns a dict with: complete, virtual_sol_reserves_lamports,
+    virtual_token_reserves, bonding_curve_pct, fetched_at_unix, error.
+    On failure, error is a non-empty string and reserves are zero.
+    """
+    helper = config._REPO_ROOT / "predictions" / "helpers" / "pumpfun_coin_detail.py"
+    try:
+        r = _subprocess.run(
+            [_sys.executable, str(helper), mint],
+            capture_output=True, text=True, timeout=60,
+        )
+    except Exception as e:
+        return {"complete": False, "virtual_sol_reserves_lamports": 0,
+                "virtual_token_reserves": 0, "bonding_curve_pct": 0.0,
+                "fetched_at_unix": 0, "error": f"subprocess failed: {e}"}
+    if r.returncode != 0:
+        return {"complete": False, "virtual_sol_reserves_lamports": 0,
+                "virtual_token_reserves": 0, "bonding_curve_pct": 0.0,
+                "fetched_at_unix": 0, "error": f"helper exit {r.returncode}"}
+    try:
+        payload = _json.loads(r.stdout)
+    except Exception as e:
+        return {"complete": False, "virtual_sol_reserves_lamports": 0,
+                "virtual_token_reserves": 0, "bonding_curve_pct": 0.0,
+                "fetched_at_unix": 0, "error": f"bad json: {e}"}
+    if payload.get("error"):
+        return {"complete": False, "virtual_sol_reserves_lamports": 0,
+                "virtual_token_reserves": 0, "bonding_curve_pct": 0.0,
+                "fetched_at_unix": 0, "error": str(payload.get("error"))}
+    d = payload.get("data") or {}
+    return {
+        "complete": bool(d.get("complete")),
+        "virtual_sol_reserves_lamports": int(d.get("virtual_sol_reserves_lamports") or 0),
+        "virtual_token_reserves": int(d.get("virtual_token_reserves") or 0),
+        "bonding_curve_pct": float(d.get("bonding_curve_pct") or 0.0),
+        "fetched_at_unix": int(d.get("fetched_at_unix") or 0),
+        "error": None,
+    }
+
+
+def _lookup_graduated_pool(mint: str) -> str | None:
+    """Query Dune's pump_call_migrate for this mint's AMM pool. Returns pool address or None."""
+    try:
+        from bootstrap.dune_client import DuneClient
+        from bootstrap.config import load_config as load_bcfg
+        sql = (
+            "SELECT account_pool FROM pumpdotfun_solana.pump_call_migrate "
+            f"WHERE account_mint = '{mint}' LIMIT 1"
+        )
+        client = DuneClient(load_bcfg())
+        rows, _ = client.run_sql(sql)
+        if rows:
+            return rows[0].get("account_pool")
+        return None
+    except Exception:
+        return None
+
+
 def _recompute_hit_rate(specialist_stats: dict, won: bool) -> dict:
     """Increment picks_audited and recompute all-time hit rate. Returns new stats dict."""
     picks = int(specialist_stats.get("picks_audited") or 0) + 1
@@ -132,28 +192,77 @@ def process_due_audits(*, now_unix: int, lessons_path) -> int:
         specialist = item.get("specialist", "unknown")
         mint = item.get("mint", "")
         pool = item.get("pool", "")
-        state = _fetch_current_pool_state(mint, pool)
-        ret = compute_realized_return(
-            entry_quote=int(item.get("entry_quote_lamports") or 0),
-            entry_base=int(item.get("entry_base_lamports") or 0),
-            current_quote=state["current_quote_reserve_lamports"],
-            current_base=state["current_base_reserve_lamports"],
-            pool_closed=state["pool_closed"],
-        )
+        kind = item.get("kind", "standard")
+
+        graduated_during_hold = False
+        if kind == "curve_stage":
+            curve = _fetch_curve_state(mint)
+            if curve.get("error"):
+                # Couldn't fetch — treat as rugged.
+                ret = -1.0
+                pool_closed = True
+            elif curve["complete"]:
+                # Token graduated between entry and audit. Look up the AMM pool.
+                graduated_during_hold = True
+                grad_pool = _lookup_graduated_pool(mint)
+                if grad_pool:
+                    pool = grad_pool
+                    state = _fetch_current_pool_state(mint, grad_pool)
+                    ret = compute_realized_return(
+                        entry_quote=int(item.get("entry_quote_lamports") or 0),
+                        entry_base=int(item.get("entry_base_lamports") or 0),
+                        current_quote=state["current_quote_reserve_lamports"],
+                        current_base=state["current_base_reserve_lamports"],
+                        pool_closed=state["pool_closed"],
+                    )
+                    pool_closed = state["pool_closed"]
+                else:
+                    # Graduated but pool not yet in Dune (publisher lag) — neutral fallback.
+                    ret = 0.0
+                    pool_closed = False
+            else:
+                # Still on curve — compute price ratio.
+                entry_q = int(item.get("entry_quote_lamports") or 0)
+                entry_b = int(item.get("entry_base_lamports") or 0)
+                curr_q = curve["virtual_sol_reserves_lamports"]
+                curr_b = curve["virtual_token_reserves"]
+                if entry_q and entry_b and curr_b:
+                    entry_price = entry_q / entry_b
+                    curr_price = curr_q / curr_b
+                    ret = (curr_price / entry_price) - 1.0
+                else:
+                    ret = 0.0
+                pool_closed = False
+        else:
+            # Existing standard path: AMM pool state via audit_outcome.py.
+            state = _fetch_current_pool_state(mint, pool)
+            ret = compute_realized_return(
+                entry_quote=int(item.get("entry_quote_lamports") or 0),
+                entry_base=int(item.get("entry_base_lamports") or 0),
+                current_quote=state["current_quote_reserve_lamports"],
+                current_base=state["current_base_reserve_lamports"],
+                pool_closed=state["pool_closed"],
+            )
+            pool_closed = state["pool_closed"]
+
         # 'won' = realized return >= specialist's effective target.
         # Simplification: treat any return >= +0.5 as a win across specialists.
         # Future iteration: read specialist's exit rule from item['recommended_exit'].
         won = ret >= 0.5
 
-        write_outcome(item["pick_id"], {
+        outcome_payload = {
             "pick_id": item["pick_id"],
+            "kind": kind,
             "specialist": specialist,
             "mint": mint, "pool": pool,
             "audited_at_unix": now_unix,
             "realized_return": round(ret, 4),
-            "pool_closed": state["pool_closed"],
+            "pool_closed": pool_closed,
             "won": won,
-        })
+        }
+        if kind == "curve_stage":
+            outcome_payload["graduated_during_hold"] = graduated_during_hold
+        write_outcome(item["pick_id"], outcome_payload)
 
         cur_stats = dict(fm.get(specialist) or {})
         fm[specialist] = _recompute_hit_rate(cur_stats, won)
