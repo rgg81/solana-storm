@@ -50,8 +50,13 @@ def _live_query(pages: int, limit: int) -> dict:
     rows: list[dict] = []
     pages_fetched = 0
     for page in range(pages):
+        # Sort by last_trade_timestamp: returns ACTIVE tokens (recently traded),
+        # not just newest-created ones. The created_timestamp sort surfaced
+        # mostly-empty just-launched tokens (0% curve, 0 trades, 'MONITORING'-style
+        # spam). Active sort surfaces mid-late curve tokens where momentum actually
+        # lives. We post-filter to pre-grad below.
         url = (f"{base}/coins?offset={page * limit}&limit={limit}"
-               f"&sort=created_timestamp&order=DESC&includeNsfw=false")
+               f"&sort=last_trade_timestamp&order=DESC&includeNsfw=false")
         body = _get(url)
         if body is None:
             if pages_fetched == 0:
