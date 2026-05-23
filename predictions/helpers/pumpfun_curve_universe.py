@@ -63,21 +63,28 @@ def _live_query(pages: int, limit: int) -> dict:
         for coin in body:
             if not isinstance(coin, dict):
                 continue
+            # Skip graduated tokens — universe is meant to be PRE-grad.
+            if bool(coin.get("complete")):
+                continue
+            # bonding_curve_pct: pump.fun graduates a curve at ~85 SOL of real_sol_reserves
+            # deposited. The v3 endpoint exposes real_sol_reserves in lamports; there is no
+            # standalone bonding_curve_progress field.
             try:
-                vs = coin.get("virtual_sol_reserves") or 0
-                # Note: market cap is reported directly by pump.fun on most coins as `market_cap_sol`;
-                # we use virtual_sol_reserves / 1e9 only as a fallback when the API omits it.
-                cap_sol = (vs / 1e9) if vs else (coin.get("market_cap") or 0) / 1e9
-            except Exception:
-                cap_sol = 0.0
-            try:
-                progress = float(coin.get("bonding_curve_progress") or 0.0)
+                rsr_lamports = float(coin.get("real_sol_reserves") or 0)
+                curve_pct = (rsr_lamports / 1e9) / 85.0 * 100.0
+                curve_pct = max(0.0, min(100.0, curve_pct))
             except (TypeError, ValueError):
-                progress = 0.0
+                curve_pct = 0.0
+            # market_cap is reported by pump.fun directly in SOL units (not lamports);
+            # market_cap_sol is rarely populated on v3, so prefer market_cap.
+            try:
+                cap_sol = float(coin.get("market_cap_sol") or coin.get("market_cap") or 0.0)
+            except (TypeError, ValueError):
+                cap_sol = 0.0
             rows.append({
                 "mint": str(coin.get("mint") or ""),
-                "bonding_curve_pct": progress * 100 if progress <= 1.5 else progress,
-                "market_cap_sol": float(coin.get("market_cap_sol") or cap_sol),
+                "bonding_curve_pct": curve_pct,
+                "market_cap_sol": cap_sol,
                 "creator_wallet": str(coin.get("creator") or ""),
                 "created_timestamp_unix": int((coin.get("created_timestamp") or 0) // 1000),
                 "reply_count": int(coin.get("reply_count") or 0),
@@ -87,6 +94,7 @@ def _live_query(pages: int, limit: int) -> dict:
                 "symbol": str(coin.get("symbol") or ""),
                 "nsfw": bool(coin.get("nsfw")),
                 "is_banned": bool(coin.get("is_banned")),
+                "complete": False,
             })
         pages_fetched += 1
         time.sleep(0.5)
