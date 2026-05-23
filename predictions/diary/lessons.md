@@ -1,22 +1,50 @@
 ---
-version: 9
-last_updated: 2026-05-23T02:07:35Z
+version: 10
+last_updated: '2026-05-23T00:00:00Z'
 total_decisions_audited: 5
 total_picks_audited: 5
-overall_buy_hit_rate: null  # no BUYs yet; cannot compute
-watch_hit_rate_all_time: 0.0  # 0 of 5 audited WATCHes hit >=1.0× (returns: -86.8%, -97.9%, -99.5%, -25.1%, -99.7%)
+overall_buy_hit_rate: null
+watch_hit_rate_all_time: 0.0
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
-cohort_avg_return_to_date: -0.819  # mean across 5 WATCH audits
+cohort_avg_return_to_date: -0.819
 trend: cold_start
-c1_status: VALIDATED  # promoted 2026-05-23T02:07:35Z after 3 confirms (MEMEWC, NATRO, CR7)
+c1_status: VALIDATED
 c1_confirms: 3
 c1_disconfirms: 0
 c2_confirms: 0
 c2_disconfirms: 0
-c3_status: CANDIDATE  # 1/3 confirms
-c3_confirms: 1  # CR7 audit confirmed mass-sniper-coord = SKIP
+c3_status: CANDIDATE
+c3_confirms: 1
 c3_disconfirms: 0
+late_curve:
+  picks_audited: 0
+  hit_rate_all_time: null
+  hit_rate_last_7d: null
+  hit_rate_last_30d: null
+  cold_start_mode: true
+early_curve:
+  picks_audited: 0
+  hit_rate_all_time: null
+  hit_rate_last_7d: null
+  hit_rate_last_30d: null
+  cold_start_mode: true
+smart_mirror:
+  picks_audited: 0
+  hit_rate_all_time: null
+  hit_rate_last_7d: null
+  hit_rate_last_30d: null
+  cold_start_mode: true
+  dormant: true
+catalyst:
+  picks_audited: 0
+  hit_rate_all_time: null
+  hit_rate_last_7d: null
+  hit_rate_last_30d: null
+  cold_start_mode: true
+fund_manager:
+  decisions_audited: 0
+  override_hit_rate: null
 ---
 
 # pump-prediction skill — rolling lessons & smart-wallet registry
