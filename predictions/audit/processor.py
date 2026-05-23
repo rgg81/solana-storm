@@ -160,6 +160,49 @@ def process_due_audits(*, now_unix: int, lessons_path) -> int:
         total += 1
         processed += 1
 
+    # Shadow-watch processing: audit "would-be BUY but vetoed by VALIDATED lesson" picks
+    # at their horizon. If the realized outcome contradicts the veto (token would have
+    # appreciated), log the disconfirm as evidence toward eventual lesson refinement.
+    from predictions.diary import shadow_watches as _shadow
+    shadow_items = _shadow.list_pending(now_unix=now_unix)
+    for sw in shadow_items:
+        try:
+            state = _fetch_current_pool_state(sw.get("mint", ""), sw.get("pool", ""))
+            entry_q = int(sw.get("entry_quote_lamports") or 0)
+            entry_b = int(sw.get("entry_base_lamports") or 0)
+            ret = compute_realized_return(
+                entry_quote=entry_q, entry_base=entry_b,
+                current_quote=state["current_quote_reserve_lamports"],
+                current_base=state["current_base_reserve_lamports"],
+                pool_closed=state["pool_closed"],
+            )
+            # The shadow-watch IS its own audit record: write an outcome with a marker so
+            # downstream lesson-refinement tooling can find them. Don't increment per-specialist
+            # picks_audited (these were NOT actual picks, just counterfactuals).
+            write_outcome(sw.get("pick_id", f"shadow-{int(_time.time())}"), {
+                "pick_id": sw.get("pick_id", ""),
+                "kind": "shadow_watch",
+                "specialist": sw.get("specialist", "unknown"),
+                "would_be_conviction": sw.get("would_be_conviction", ""),
+                "vetoed_by": sw.get("vetoed_by", ""),
+                "mint": sw.get("mint", ""),
+                "audited_at_unix": now_unix,
+                "realized_return": round(ret, 4),
+                "pool_closed": state["pool_closed"],
+                # Disconfirms the veto only if return >= 0.5 (i.e., the would-be-BUY would have hit target)
+                "disconfirms_veto": ret >= 0.5,
+            })
+            processed += 1
+        except Exception:
+            continue
+        # Remove the shadow-watch file after auditing so it doesn't get re-processed.
+        try:
+            shadow_path = config.SHADOW_WATCH_DIR / f"{sw.get('pick_id', '')}-shadow.md"
+            if shadow_path.exists():
+                shadow_path.unlink()
+        except Exception:
+            pass
+
     # Only rewrite lessons.md if we actually processed anything — avoids spurious
     # version bumps + last_updated churn on idle audit-tick fires (cron runs every 10min).
     if processed > 0:

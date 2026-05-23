@@ -50,6 +50,25 @@ def _run_audit_tick():
 def _run_specialist(name: str):
     from predictions.agents import dispatch
     result = dispatch.dispatch_specialist(name)
+    # Persist any shadow-watches the specialist emitted.
+    # Format expected: result["shadow_watches"] is a list of dicts with
+    # mint, would_be_conviction, vetoed_by, plus optional entry_quote / entry_base / recommended_exit.
+    from predictions.diary import shadow_watches as _shadow
+    for sw in (result.get("shadow_watches") or []):
+        try:
+            _shadow.write_shadow_watch(
+                specialist=name,
+                mint=str(sw.get("mint", "")),
+                pool=str(sw.get("pool", "")),
+                would_be_conviction=str(sw.get("would_be_conviction", "WATCH")),
+                vetoed_by=str(sw.get("vetoed_by", "unknown")),
+                entry_quote=int(sw.get("entry_quote_lamports", 0)),
+                entry_base=int(sw.get("entry_base_lamports", 0)),
+                recommended_exit=sw.get("recommended_exit") or {"rule": "default", "hard_timeout_hours": 24},
+            )
+        except Exception:
+            # Don't let a malformed shadow-watch entry break the cron.
+            continue
     # Write specialist output to a decision file
     decisions_dir = config._REPO_ROOT / "predictions" / "diary" / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
