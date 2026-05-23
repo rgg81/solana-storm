@@ -1,0 +1,17 @@
+{
+  "data": {
+    "tickers_queried": ["STORM"],
+    "posts": [
+      {
+        "title": "STORM token explodes 200% in 24h",
+        "source_domain": "coindesk.com",
+        "published_at_unix": 1716290000,
+        "votes": {"positive": 14, "negative": 2, "important": 3, "liked": 7},
+        "currencies_tagged": ["STORM"],
+        "url": "https://cryptopanic.com/news/example"
+      }
+    ],
+    "fetched_at_unix": 1716293000
+  },
+  "error": null
+}
