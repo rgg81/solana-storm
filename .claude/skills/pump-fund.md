@@ -52,8 +52,9 @@ Read the universe + curve history + lessons.md once, then dispatch 4 specialists
 
 ```bash
 cd /home/roberto/solana-storm
+set -a; source .env; set +a
 python3 << 'PY'
-import json, sys
+import json, re, subprocess, sys
 from pathlib import Path
 from predictions import universe
 from predictions.agents import invoker
@@ -64,12 +65,61 @@ pregrad = universe.fetch_pregrad_universe()
 graduated = universe.fetch_graduated_universe()
 lessons_md = lessons_io.load_body(Path("predictions/diary/lessons.md"))
 
+# Extract up to 10 catalyst-eligible tickers from the combined universe.
+# Filter rules: 3+ chars, alphanumeric, skip generic noise like 'joy'/'cl'/'24'.
+def _extract_tickers(*sources, max_n=10):
+    seen, out = set(), []
+    skip = {"JOY", "CL", "24", "TEST", "TOKEN", "MEME", "COIN"}
+    for src in sources:
+        rows = (src or {}).get("data") or src or []
+        if isinstance(rows, dict):
+            rows = rows.get("data") or rows.get("pregrad") or rows.get("graduated") or []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            sym = str(r.get("symbol") or "").strip().upper()
+            if len(sym) < 3 or not re.fullmatch(r"[A-Z0-9]+", sym):
+                continue
+            if sym in skip or sym in seen:
+                continue
+            seen.add(sym); out.append(sym)
+            if len(out) >= max_n:
+                return out
+    return out
+
+tickers = _extract_tickers(pregrad, graduated, max_n=10)
+ticker_csv = ",".join(tickers)
+
+# Run cryptopanic + reddit helpers once for the catalyst extras.
+catalyst_extras = {}
+if ticker_csv:
+    try:
+        cp = subprocess.run(
+            ["python3", "predictions/helpers/cryptopanic_feed.py", "--tickers", ticker_csv],
+            capture_output=True, text=True, timeout=60,
+        )
+        catalyst_extras["cryptopanic_feed"] = json.loads(cp.stdout) if cp.stdout.strip() else {"data": None, "error": "empty stdout"}
+    except Exception as e:
+        catalyst_extras["cryptopanic_feed"] = {"data": None, "error": f"cryptopanic helper failed: {e}"}
+    try:
+        rd = subprocess.run(
+            ["python3", "predictions/helpers/reddit_hot_posts.py", "--tickers", ticker_csv],
+            capture_output=True, text=True, timeout=60,
+        )
+        catalyst_extras["reddit_hot_posts"] = json.loads(rd.stdout) if rd.stdout.strip() else {"data": None, "error": "empty stdout"}
+    except Exception as e:
+        catalyst_extras["reddit_hot_posts"] = {"data": None, "error": f"reddit helper failed: {e}"}
+else:
+    catalyst_extras["cryptopanic_feed"] = {"data": None, "error": "no eligible tickers in universe"}
+    catalyst_extras["reddit_hot_posts"] = {"data": None, "error": "no eligible tickers in universe"}
+
 for spec in ("late_curve", "early_curve", "smart_mirror", "catalyst"):
+    extras = catalyst_extras if spec == "catalyst" else {}
     ctx = invoker.build_context(
         spec,
         universe={"pregrad": pregrad, "graduated": graduated},
         curve_history={},  # specialists request specific mints' history via the curve_history field as needed
-        extras={},
+        extras=extras,
     )
     out = (Path("/tmp") / f"prompt_{spec}.txt")
     template = ctx["prompt_template"]
