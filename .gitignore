@@ -31,3 +31,4 @@ predictions/state/*.txt
 predictions/state/*.jsonl
 predictions/diary/shadow_watches/*.md
 predictions/audit/pending.jsonl
+predictions/diary/paper_portfolio_snapshot.md
