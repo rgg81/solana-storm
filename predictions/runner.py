@@ -1,6 +1,6 @@
 """Single cron entry point. Dispatches based on argv[1]."""
 from __future__ import annotations
-import os, sys, time, traceback
+import json, os, sys, time, traceback
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +17,6 @@ KNOWN_COMMANDS = {
 
 def _log_error(cmd: str, exc: Exception) -> None:
     config.STATE_DIR.mkdir(parents=True, exist_ok=True)
-    import json
     entry = {
         "ts_unix": int(time.time()),
         "cmd": cmd,
@@ -52,14 +51,38 @@ def _run_audit_tick():
 
 
 def _run_specialist(name: str):
-    # Stub: real subagent invocation is performed by the calling harness (CronCreate command).
-    # This runner just confirms the request is well-formed and emits a status file.
-    print(f"specialist {name} dispatch — real subagent invocation should be wired by orchestrator")
+    from predictions.agents import dispatch
+    result = dispatch.dispatch_specialist(name)
+    # Write specialist output to a decision file
+    decisions_dir = config._REPO_ROOT / "predictions" / "diary" / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y-%m-%d-%H-%M", time.gmtime())
+    out = decisions_dir / f"{ts}-{name}.md"
+    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float, bool)) else v}"
+                                for k, v in result.items()) + "\n---\n"
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(body)
+    tmp.rename(out)
+    print(f"specialist {name}: wrote {out.name}")
     return 0
 
 
 def _run_fund_manager():
-    print("fund_manager dispatch — real subagent invocation should be wired by orchestrator")
+    from predictions.agents import dispatch
+    result = dispatch.dispatch_fund_manager()
+    decisions_dir = config._REPO_ROOT / "predictions" / "diary" / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y-%m-%d-%H-%M", time.gmtime())
+    out = decisions_dir / f"{ts}-fund_manager.md"
+    body = "---\n" + "\n".join(f"{k}: {json.dumps(v) if not isinstance(v, (str, int, float, bool)) else v}"
+                                for k, v in result.items()) + "\n---\n"
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(body)
+    tmp.rename(out)
+    # Update last_fm_cycle marker
+    config.LAST_FM_CYCLE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config.LAST_FM_CYCLE_PATH.write_text(str(int(time.time())))
+    print(f"fund_manager: wrote {out.name}")
     return 0
 
 
