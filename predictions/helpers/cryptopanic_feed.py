@@ -5,7 +5,7 @@ Usage:
 """
 from __future__ import annotations
 import argparse, json, sys, time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +68,11 @@ def _live_query(tickers: list[str], filter_: str) -> dict:
             return {"data": None, "error": f"cryptopanic http {r.status_code}"}
         body = r.json()
     except Exception as e:
-        return {"data": None, "error": f"cryptopanic error: {e}"}
+        # Sanitize: requests exception strings often embed the full URL including auth_token.
+        msg = str(e)
+        if config.CRYPTOPANIC_API_TOKEN and config.CRYPTOPANIC_API_TOKEN in msg:
+            msg = msg.replace(config.CRYPTOPANIC_API_TOKEN, "***")
+        return {"data": None, "error": f"cryptopanic error: {msg}"}
 
     posts = []
     for p in (body.get("results") or []):
