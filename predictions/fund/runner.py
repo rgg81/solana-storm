@@ -1,0 +1,258 @@
+"""Solana Multi-Agent Fund orchestrator — 5-agent, 8h cadence.
+
+Usage:
+    python3 predictions/fund/runner.py prepare    # do Phase 0-1: account refresh + universe scout data
+    python3 predictions/fund/runner.py status     # show account + performance + open positions
+    python3 predictions/fund/runner.py mark       # just mark-to-market
+
+The full multi-agent dispatch (Phases 2-5) is driven by the skill (Agent tool calls).
+Runner stages the data + writes per-phase artifacts to /tmp/fund_tick_<phase>.json
+"""
+from __future__ import annotations
+import argparse, json, sys, time
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from predictions.fund import account, performance, fees_model
+from predictions.fund.helpers import coingecko_top, indicators
+
+STATE_DIR = Path(__file__).resolve().parent / "state"
+PROMPTS_DIR = Path(__file__).resolve().parent / "agents"
+
+def mark_to_market_all(force_refresh: bool = False) -> dict:
+    """Refresh prices for all open holdings + universe candidates.
+    Returns: prices dict {ticker: price_usd} + mtm summary."""
+    state = account.load()
+    held = [t for t, h in state["holdings"].items() if h.get("units", 0) > 0]
+    # For mark-to-market we only need PRICES — universe will fetch full data
+    prices = {}
+    # Use CoinGecko simple/price for known tickers (cheap, no key)
+    if held:
+        import requests
+        # Build cg_id lookup from CoinGecko top fetch (cached)
+        tops = coingecko_top.fetch_top_solana(per_page=100)
+        cgid_by_ticker = {t["ticker"]: t["cg_id"] for t in tops}
+        ids = [cgid_by_ticker.get(t) for t in held if cgid_by_ticker.get(t)]
+        ids = [i for i in ids if i]
+        if ids:
+            try:
+                r = requests.get("https://api.coingecko.com/api/v3/simple/price",
+                                  params={"ids": ",".join(ids), "vs_currencies": "usd"},
+                                  headers={"User-Agent": "smaf/1.0"}, timeout=15)
+                if r.status_code == 200:
+                    j = r.json()
+                    for ticker in held:
+                        cg = cgid_by_ticker.get(ticker)
+                        if cg and cg in j: prices[ticker] = float(j[cg]["usd"])
+            except Exception as e:
+                print(f"  mtm prices fetch failed: {e}")
+    mtm = account.mark_to_market(state, prices)
+    # Check stops
+    triggered = account.check_stop_triggers(state, prices) if prices else []
+    account.save(state)
+    account.snapshot_equity(state, mtm)
+    return {"prices": prices, "mtm": mtm, "stop_triggers": triggered}
+
+
+def stage_universe(out_path: Path) -> dict:
+    """Phase 1 prep: assemble universe candidates + lessons + perf state.
+    Writes a single JSON for the Universe Scout subagent."""
+    state = account.load()
+    held = sorted([t for t, h in state["holdings"].items() if h.get("units", 0) > 0])
+    
+    # CoinGecko top-50 Solana, filtered
+    tops = coingecko_top.fetch_top_solana(per_page=50)
+    filtered = coingecko_top.filter_universe(tops, min_mcap=5_000_000, min_vol_24h=200_000)
+    trending = coingecko_top.fetch_trending()
+    
+    # DexScreener boosts (Solana only)
+    boosts = []
+    try:
+        import requests
+        r = requests.get("https://api.dexscreener.com/token-boosts/top/v1",
+                          headers={"User-Agent": "smaf/1.0"}, timeout=10)
+        if r.status_code == 200:
+            j = r.json()
+            if isinstance(j, list):
+                boosts = [{"address": b.get("tokenAddress",""), "amount": b.get("amount")}
+                          for b in j if b.get("chainId") == "solana"][:10]
+    except Exception:
+        pass
+    
+    # Performance state
+    perf = performance.compute()
+    
+    payload = {
+        "phase": "universe_scout_input",
+        "run_time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "current_holdings": held,
+        "candidates": [{"ticker": t["ticker"], "name": t["name"],
+                         "market_cap_usd": t["market_cap_usd"],
+                         "volume_24h_usd": t["volume_24h_usd"],
+                         "change_1h_pct": t["change_1h_pct"],
+                         "change_24h_pct": t["change_24h_pct"],
+                         "change_7d_pct": t["change_7d_pct"]}
+                        for t in filtered[:30]],
+        "cg_trending": trending[:15],
+        "dex_boosts_sol": boosts,
+        "performance_state": performance.format_for_agent_prompt(perf),
+        "performance_state_raw": perf,
+        "fund_account": {
+            "deposit_usd": state["deposit_usd"],
+            "cash_usd": state["cash_usd"],
+            "n_positions": sum(1 for h in state["holdings"].values() if h.get("units", 0) > 0),
+            "halted": state.get("halted", False),
+        },
+    }
+    tmp = out_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str))
+    tmp.rename(out_path)
+    return payload
+
+
+def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
+    """Execute Portfolio Manager orders against the account.
+    
+    Maps PM's `stop_loss_price_usd` / `take_profit_price_usd` keys to
+    account.set_risk_levels' `stop_loss_price` / `take_profit_price` kwargs.
+    Logs any wiring issues to bugs.jsonl.
+    """
+    from predictions.fund import account as acct, fees_model, bugs
+    state = acct.load()
+    
+    # Get fee/slippage estimates from per-symbol input (cached from this tick)
+    risk_in_path = STATE_DIR / "tick_risk_input.json"
+    per_sym = {}
+    if risk_in_path.exists():
+        per_sym = json.loads(risk_in_path.read_text()).get("specialist_consensus_per_symbol", {})
+    
+    results = []
+    for trade in pm_output.get("trades", []):
+        ticker = trade.get("ticker")
+        side = trade.get("side")
+        usd = float(trade.get("usd_amount", 0))
+        price = float(trade.get("price_usd", 0))
+        if not (ticker and side and usd > 0 and price > 0):
+            bugs.log("HIGH", "execution", f"Malformed PM trade order", context=trade)
+            results.append({"trade": trade, "result": {"executed": False, "reason": "MALFORMED"}})
+            continue
+        
+        # Recompute fees from current pool liquidity
+        liq = per_sym.get(ticker, {}).get("liq_usd_main_pool", 0)
+        est = fees_model.estimate(usd, liq)
+        if est.slippage_pct > 0.015:  # 1.5% hard limit
+            bugs.log("HIGH", "execution",
+                      f"{ticker} {side} skipped: slippage {est.slippage_pct*100:.2f}% > 1.5% cap",
+                      context={"ticker": ticker, "usd": usd, "liq": liq})
+            results.append({"trade": trade, "result": {"executed": False, "reason": "SLIPPAGE_CAP"}})
+            continue
+        
+        result = acct.execute_trade(state, ticker, side, usd, price,
+                                      est.fee_pct, est.slippage_pct,
+                                      reason=trade.get("reason", "pm")[:200])
+        
+        # Set stops on BUY orders
+        if side == "buy" and result.get("executed"):
+            # Map PM's _usd-suffixed keys to set_risk_levels' kwarg names
+            sl = trade.get("stop_loss_price_usd") or trade.get("stop_loss_usd")
+            tp = trade.get("take_profit_price_usd") or trade.get("take_profit_usd")
+            if not sl:
+                bugs.log("HIGH", "execution",
+                          f"{ticker} BUY executed but PM provided NO stop_loss — risk-management gap",
+                          context=trade)
+            else:
+                ok = acct.set_risk_levels(state, ticker, stop_loss_price=sl,
+                                            take_profit_price=tp, set_by="pm_execute")
+                if not ok:
+                    bugs.log("HIGH", "execution",
+                              f"{ticker} set_risk_levels failed (no units?)",
+                              context=trade)
+        
+        results.append({"trade": trade, "result": result})
+    
+    # Process stop_updates (TIGHTEN_STOP / TRAIL_UP / etc from Risk Mgr)
+    for update in pm_output.get("stop_updates", []):
+        ticker = update.get("ticker")
+        new_stop = update.get("new_stop_usd") or update.get("new_stop_loss_price_usd")
+        new_tp = update.get("new_take_profit_usd") or update.get("new_take_profit_price_usd")
+        if not ticker: continue
+        ok = acct.set_risk_levels(state, ticker, stop_loss_price=new_stop,
+                                    take_profit_price=new_tp, set_by="pm_stop_update")
+        if not ok:
+            bugs.log("MEDIUM", "execution",
+                      f"{ticker} stop_update no-op (position closed?)",
+                      context=update)
+    
+    acct.save(state)
+    
+    # Mark-to-market + snapshot equity
+    if prices is None:
+        prices = {t["ticker"]: float(t["price_usd"]) for t in pm_output.get("trades", [])
+                  if t.get("side") == "buy" and t.get("price_usd")}
+    mtm = acct.mark_to_market(state, prices)
+    acct.snapshot_equity(state, mtm)
+    
+    return {"results": results, "mtm": mtm, "state_after": state}
+
+
+def cmd_prepare() -> int:
+    """Run Phases 0-1: mark-to-market then stage universe data for Scout."""
+    print("=== Phase 0: mark-to-market ===")
+    mtm_out = mark_to_market_all()
+    mtm = mtm_out["mtm"]
+    print(f"  Equity: ${mtm['equity_usd']:,.2f}  Cash: ${mtm['cash_usd']:,.2f}  "
+          f"Holdings: ${mtm['holdings_value_usd']:,.2f}  Deployed: {mtm['deployed_pct']*100:.1f}%")
+    print(f"  Positions: {mtm['n_positions']}  Drawdown: {mtm['drawdown_from_peak_pct']*100:+.2f}%")
+    if mtm_out["stop_triggers"]:
+        print("  ⚠ STOP TRIGGERS:")
+        for s in mtm_out["stop_triggers"]:
+            print(f"    {s['ticker']} {s['trigger']} @ ${s['current_price']:.6g} (level ${s['level']:.6g})")
+    print()
+    print("=== Phase 1: stage universe data for Scout ===")
+    out = STATE_DIR / "tick_universe_input.json"
+    p = stage_universe(out)
+    print(f"  Candidates: {len(p['candidates'])}, current holdings: {len(p['current_holdings'])}, "
+          f"trending tokens: {len(p['cg_trending'])}")
+    print(f"  Output: {out}")
+    return 0
+
+
+def cmd_status() -> int:
+    state = account.load()
+    mtm_out = mark_to_market_all()
+    mtm = mtm_out["mtm"]
+    perf = performance.compute(prices=mtm_out["prices"])
+    print("# Solana Multi-Agent Fund — status")
+    print()
+    print(performance.format_for_agent_prompt(perf))
+    print()
+    print(f"Holdings:")
+    if not mtm["positions"]:
+        print("  (none)")
+    else:
+        for tk, p in mtm["positions"].items():
+            if p["units"] <= 0: continue
+            print(f"  {tk:<8} {p['units']:>14.4f} @ ${p['current_price']:.6g}  "
+                  f"mv ${p['market_value_usd']:>8.2f}  "
+                  f"pnl ${p['unrealized_pnl_usd']:>+7.2f} ({p['unrealized_pnl_pct']*100:>+5.1f}%)")
+    return 0
+
+
+def cmd_mark() -> int:
+    out = mark_to_market_all()
+    print(json.dumps(out["mtm"], indent=2, default=str))
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("cmd", choices=["prepare", "status", "mark"])
+    args = p.parse_args()
+    return {"prepare": cmd_prepare, "status": cmd_status, "mark": cmd_mark}[args.cmd]()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
