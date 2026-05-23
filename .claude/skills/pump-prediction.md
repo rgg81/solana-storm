@@ -1,3 +1,10 @@
+> **⚠️ DEPRECATED 2026-05-23.** This skill is v1 (post-graduation picker). v1 reached its
+> structural verdict — C1 VALIDATED, 5/5 audited WATCHes all decayed (cohort avg -81.9%).
+> See `.claude/skills/pump-fund.md` for the v2 multi-agent replacement.
+> v1's lessons.md (in `predictions/diary/lessons.md`) carries forward into v2 unchanged.
+
+---
+
 ---
 name: pump-prediction
 description: Pick 3-5 pump.fun graduations and audit prior 24h-old decisions for realized return. Use when the user wants fresh memecoin signals or wants to evaluate recent picks against on-chain outcomes.
