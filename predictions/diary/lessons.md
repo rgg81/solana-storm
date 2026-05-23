@@ -1,17 +1,18 @@
 ---
-version: 10
-last_updated: '2026-05-23T00:00:00Z'
-total_decisions_audited: 5
-total_picks_audited: 5
+version: 11
+last_updated: '2026-05-23T13:01:09Z'
+total_decisions_audited: 6
+total_picks_audited: 6
 overall_buy_hit_rate: null
 watch_hit_rate_all_time: 0.0
 buy_hit_rate_last_7d: null
 buy_hit_rate_first_7d: null
-cohort_avg_return_to_date: -0.819
+cohort_avg_return_to_date: -0.844
 trend: cold_start
 c1_status: VALIDATED
-c1_confirms: 3
+c1_confirms: 4
 c1_disconfirms: 0
+c1_mid_disconfirms_via_organic_arrival: 1  # NOAR -97.3% confirms mid-C1 alone (organic arrival doesn't rescue)
 c2_confirms: 0
 c2_disconfirms: 0
 c3_status: CANDIDATE
@@ -66,13 +67,14 @@ falls back to the bootstrap heuristics defined in
 
 `if pumpfun.ath_market_cap_usd / max(pumpfun.market_cap_usd, 1) > 10` → SKIP.
 
-- status: **VALIDATED** (promoted 2026-05-23T02:07:35Z after 3 audit confirms)
-- confirms: **3**
+- status: **VALIDATED** (promoted 2026-05-23T02:07:35Z after 3 audit confirms; +1 NOAR confirm at 13:01 UTC)
+- confirms: **4**
   - **MEMEWC** audit 2026-05-22T13:38:11Z: entered ATH/MC=**89×** (mid), realized **−99.5%**, pool drained 92.5%.
   - **NATRO** audit 2026-05-22T21:57:46Z: entered ATH/MC=**232×** (extreme), realized **−25.1%**, pool drained 41.8%.
-  - **CR7** audit 2026-05-23T02:07:35Z: entered ATH/MC=**87.9×** (mid), realized **−99.7%**, pool drained 94.8%.
+  - **CR7** audit 2026-05-23T02:07:35Z: entered ATH/MC=**87.9×** (mid + sniper-coord), realized **−99.7%**, pool drained 94.8%.
+  - **NOAR** audit 2026-05-23T13:01:09Z: entered ATH/MC=**87.7×** (mid + ORGANIC arrival 346s spread), realized **−97.3%**, pool drained 83.5%. **Tested + DISCONFIRMED the "organic-arrival rescues mid-C1" hypothesis** — outcome separation from CR7 was 2.4pp, statistically noise. Mid-C1 alone dooms tokens regardless of arrival pattern.
 - disconfirms: 0
-- last_confirmed_at: 2026-05-23T02:07:35Z
+- last_confirmed_at: 2026-05-23T13:01:09Z
 - first_observed: 2026-05-21T13:25:17Z
 - observation_count (entry-time): 23 of 23 shortlisted tokens triggered this ratio. Range 87.9× to 21,847×. No counter-example.
 - audit-time outcomes: 5 of 5 WATCH/BUY-eligible audits showed realized_return < 0 (3 mid-C1 averaging -99.0%; 1 extreme-C1 at -25.1%; 2 pre-pumpfun WATCHes averaging -92.4%).
