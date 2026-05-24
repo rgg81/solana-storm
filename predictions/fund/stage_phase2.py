@@ -11,7 +11,7 @@ Fetches per-symbol:
 Writes one merged JSON to predictions/fund/state/tick_phase2_input.json
 """
 from __future__ import annotations
-import json, sys, time
+import json, sys, time, re
 from pathlib import Path
 import requests
 
@@ -61,7 +61,11 @@ KNOWN_MINTS = {
     "pudgy-penguins":          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
     "bonk":                    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
     "official-trump":          "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
-    "doublezero":              "J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd",  # 2Z DoubleZero
+    "doublezero":              "J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd",  # 2Z
+    "jito-governance-token":   "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",
+    "raydium":                 "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "dogwifcoin":              "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "virtual-protocol":        "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",  # bridged
 }
 
 def fetch_mint(cg_id: str) -> str | None:
@@ -199,15 +203,27 @@ def main():
         from predictions.basket.rss_news import find_basket_mentions
         # Hack: temporarily override SEARCH_TERMS for our dynamic universe
         from predictions.basket import rss_news as rss
+        # Extended search terms — match by ticker AND project name where known
+        TICKER_NAMES = {
+            "RENDER": ["RENDER", "Render Network"], "JUP": ["JUP", "Jupiter Exchange", "Jupiter"],
+            "JTO": ["JTO", "Jito"], "RAY": ["RAY", "Raydium"], "ORCA": ["ORCA", "Orca"],
+            "PYTH": ["PYTH", "Pyth Network", "Pyth"], "BONK": ["BONK"],
+            "WIF": ["WIF", "dogwifhat"], "PENGU": ["PENGU", "Pudgy Penguins"],
+            "POPCAT": ["POPCAT"], "MEW": ["MEW"], "DRIFT": ["DRIFT", "Drift Protocol"],
+            "SOL": ["SOL", "Solana"], "GRASS": ["GRASS"], "PUMP": ["PUMP", "pump.fun"],
+            "TRUMP": ["TRUMP"], "VIRTUAL": ["VIRTUAL", "Virtual Protocol"],
+            "2Z": ["2Z", "DoubleZero"],
+        }
         dynamic_terms = {}
         for s in selected:
             t = s["ticker"]
-            dynamic_terms[t] = [fr"\b{t}\b"]
+            names = TICKER_NAMES.get(t, [t])
+            dynamic_terms[t] = [fr"\b{re.escape(n)}\b" for n in names]
         # save & restore
         original = rss.SEARCH_TERMS
         rss.SEARCH_TERMS = dynamic_terms
         try:
-            rss_out = find_basket_mentions(hours=48)
+            rss_out = find_basket_mentions(hours=168)
             output["rss_news"] = {
                 "total_items_in_window": rss_out.get("items_in_window", 0),
                 "mentions_per_ticker": rss_out.get("matches_per_ticker", {}),

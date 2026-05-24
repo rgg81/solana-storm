@@ -168,6 +168,47 @@ def build_report() -> str:
                 lines.append(f"| {t} | {opt:+.2f} | {se:+.2f} | **{consensus:+.2f}** |")
         lines.append("")
         
+        # ===== Sentiment breakdown subsection =====
+        if has_both:
+            opt_sents = {}
+            pes_sents = {}
+            opt_headlines = {}
+            opt_weighting = {}
+            pes_weighting = {}
+            for s in optimist.get("scores", []):
+                ns = s.get("news_sentiment") or {}
+                opt_sents[s["ticker"]] = ns.get("score") if ns else None
+                opt_headlines[s["ticker"]] = ns.get("headlines_used") or []
+                opt_weighting[s["ticker"]] = s.get("weighting_rationale", "")
+            for s in pessimist.get("scores", []):
+                ns = s.get("news_sentiment") or {}
+                pes_sents[s["ticker"]] = ns.get("score") if ns else None
+                pes_weighting[s["ticker"]] = s.get("weighting_rationale", "")
+            # Sentiment table — only if at least one MA produced sentiment data
+            any_sent = any(v is not None for v in list(opt_sents.values()) + list(pes_sents.values()))
+            if any_sent:
+                lines.append("### News-sentiment scoring (Optimist vs Pessimist)")
+                lines.append("")
+                lines.append("Both analysts read the same headlines but **interpret + weight them independently per symbol**. The weighting (tech vs sentiment) is the agent's call per-symbol with explicit rationale.")
+                lines.append("")
+                lines.append("| Ticker | Opt sent | Opt weighting | Pes sent | Pes weighting | Headline |")
+                lines.append("|---|---|---|---|---|---|")
+                for t in universe:
+                    os = opt_sents.get(t)
+                    ps = pes_sents.get(t)
+                    headlines = opt_headlines.get(t) or []
+                    n_h = len(headlines)
+                    sample = ""
+                    if headlines:
+                        h0 = headlines[0]
+                        sample = f'"{h0.get("title","")[:55]}"'
+                    os_s = f"{os:+.2f}" if os is not None else "n/a"
+                    ps_s = f"{ps:+.2f}" if ps is not None else "n/a"
+                    ow = (opt_weighting.get(t, "")[:30])
+                    pw = (pes_weighting.get(t, "")[:30])
+                    lines.append(f"| {t} | {os_s} | {ow} | {ps_s} | {pw} | {sample if sample else '_no_data_'} |")
+                lines.append("")
+        
         # Top BUY candidates + top AVOIDs with reasoning
         consensus_sorted = sorted(universe, 
                                     key=lambda t: -((opt_scores.get(t,0)+pes_scores.get(t,opt_scores.get(t,0))+se_scores.get(t,0))/3))
