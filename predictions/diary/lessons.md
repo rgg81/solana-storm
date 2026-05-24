@@ -1,6 +1,6 @@
 ---
-version: 11
-last_updated: '2026-05-23T13:01:09Z'
+version: 13
+last_updated: '2026-05-23T21:25:01Z'
 total_decisions_audited: 6
 total_picks_audited: 6
 overall_buy_hit_rate: null
@@ -12,7 +12,7 @@ trend: cold_start
 c1_status: VALIDATED
 c1_confirms: 4
 c1_disconfirms: 0
-c1_mid_disconfirms_via_organic_arrival: 1  # NOAR -97.3% confirms mid-C1 alone (organic arrival doesn't rescue)
+c1_mid_disconfirms_via_organic_arrival: 1
 c2_confirms: 0
 c2_disconfirms: 0
 c3_status: CANDIDATE

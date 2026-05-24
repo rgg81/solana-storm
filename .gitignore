@@ -32,3 +32,11 @@ predictions/state/*.jsonl
 predictions/diary/shadow_watches/*.md
 predictions/audit/pending.jsonl
 predictions/diary/paper_portfolio_snapshot.md
+
+# Pivot A — Solana basket state
+predictions/basket/state/
+predictions/fund/state/
+.claude/scheduled_tasks.lock
+
+# Fund tick reports (committed for audit trail) — only ignore tmp files
+predictions/fund/reports/*.tmp
