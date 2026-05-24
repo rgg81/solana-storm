@@ -1,52 +1,55 @@
 ---
 version: 1
-last_updated: 2026-05-24T10:30:00Z
+last_updated: '2026-05-24T18:59:51Z'
 total_ticks_recorded: 0
-total_closed_trades_audited: 0
-
-# Specialist scoreboard — track who's been right per closed trade
-# Updated by audit.audit_close() when a position is closed (stop, TP, or manual)
+total_closed_trades_audited: 1
 scoreboard:
   market_analyst_optimist:
-    closed_trades_scored: 0
-    correct_directional_calls: 0   # entry-time score sign matched final realized return sign
-    avg_score_on_winners: null     # avg entry-time score across closed-winning positions
-    avg_score_on_losers: null      # avg entry-time score across closed-losing positions
-    over_confidence_flag: false    # set true if avg_score_on_losers > +0.30 (cried wolf positive)
+    closed_trades_scored: 1
+    correct_directional_calls: 0
+    avg_score_on_winners: null
+    avg_score_on_losers: 0.75
+    over_confidence_flag: false
+    _n_losers: 1
   market_analyst_pessimist:
-    closed_trades_scored: 0
+    closed_trades_scored: 1
     correct_directional_calls: 0
     avg_score_on_winners: null
-    avg_score_on_losers: null
-    over_caution_flag: false       # set true if avg_score_on_winners < -0.10 (rejected winners)
+    avg_score_on_losers: 0.1
+    over_caution_flag: false
+    _n_losers: 1
   solana_expert:
-    closed_trades_scored: 0
+    closed_trades_scored: 1
     correct_directional_calls: 0
     avg_score_on_winners: null
-    avg_score_on_losers: null
+    avg_score_on_losers: 0.1
+    _n_losers: 1
   risk_manager:
     forced_closes_executed: 0
-    forced_closes_validated: 0     # if forced close was followed by further decline (validated)
-    size_adjustments_correlation: null  # disagreement-driven size cuts → did they avoid losses?
+    forced_closes_validated: 0
+    size_adjustments_correlation: null
   portfolio_manager:
     trades_executed: 0
-    closes_executed: 0
-
-# Disagreement → outcome correlation
-# When Optimist + Pessimist disagreed by N, what's the realized return?
+    closes_executed: 1
 disagreement_outcome:
-  spread_0_to_15:    {n: 0, avg_return_pct: null, win_rate: null}
-  spread_15_to_40:   {n: 0, avg_return_pct: null, win_rate: null}
-  spread_40_to_70:   {n: 0, avg_return_pct: null, win_rate: null}
-  spread_70_plus:    {n: 0, avg_return_pct: null, win_rate: null}
-
-# Validated lessons (≥3 confirms, drive hard rules on agents)
+  spread_0_to_15:
+    n: 0
+    avg_return_pct: null
+    win_rate: null
+  spread_15_to_40:
+    n: 0
+    avg_return_pct: null
+    win_rate: null
+  spread_40_to_70:
+    n: 1
+    avg_return_pct: -6.26
+    win_rate: 0.0
+  spread_70_plus:
+    n: 0
+    avg_return_pct: null
+    win_rate: null
 validated_rules_count: 0
-
-# Candidate lessons (1-2 confirms, awaiting more data)
 candidate_rules_count: 0
-
-# Disconfirmed lessons (negated by evidence)
 disconfirmed_rules_count: 0
 ---
 

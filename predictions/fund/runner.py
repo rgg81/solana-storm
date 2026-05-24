@@ -133,10 +133,13 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
     for trade in pm_output.get("trades", []):
         ticker = trade.get("ticker")
         side = trade.get("side")
-        usd = float(trade.get("usd_amount", 0))
-        price = float(trade.get("price_usd", 0))
+        # PM may use usd_amount or usd_amount_gross (sell-side) — accept both
+        usd = float(trade.get("usd_amount") or trade.get("usd_amount_gross") or 0)
+        price = float(trade.get("price_usd") or 0)
         if not (ticker and side and usd > 0 and price > 0):
-            bugs.log("HIGH", "execution", f"Malformed PM trade order", context=trade)
+            bugs.log("HIGH", "execution",
+                      f"Malformed PM trade order: ticker={ticker} side={side} usd={usd} price={price}",
+                      context={"keys": list(trade.keys())})
             results.append({"trade": trade, "result": {"executed": False, "reason": "MALFORMED"}})
             continue
         
@@ -160,7 +163,7 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
         # If this was a SELL that closed the position (units → 0), audit it
         if side == "sell" and result.get("executed"):
             post_units = state["holdings"].get(ticker, {}).get("units", 0)
-            if post_units == 0 and pre_holdings_snapshot.get("entry_consensus"):
+            if post_units < 1e-4 and pre_holdings_snapshot.get("entry_consensus"):  # tolerance for float dust
                 try:
                     from predictions.fund import audit as audit_mod
                     realized = result.get("realized_pnl_usd")
