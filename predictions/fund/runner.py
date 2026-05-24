@@ -150,11 +150,39 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
             results.append({"trade": trade, "result": {"executed": False, "reason": "SLIPPAGE_CAP"}})
             continue
         
+        # Snapshot entry_consensus BEFORE execution (so we can audit-close even on full liquidation)
+        pre_holdings_snapshot = dict(state["holdings"].get(ticker, {}))
+        
         result = acct.execute_trade(state, ticker, side, usd, price,
                                       est.fee_pct, est.slippage_pct,
                                       reason=trade.get("reason", "pm")[:200])
         
-        # Set stops on BUY orders
+        # If this was a SELL that closed the position (units → 0), audit it
+        if side == "sell" and result.get("executed"):
+            post_units = state["holdings"].get(ticker, {}).get("units", 0)
+            if post_units == 0 and pre_holdings_snapshot.get("entry_consensus"):
+                try:
+                    from predictions.fund import audit as audit_mod
+                    realized = result.get("realized_pnl_usd")
+                    if realized is None:
+                        # Estimate: gross proceeds - cost basis (since execute_trade already netted fees)
+                        realized = (usd - (pre_holdings_snapshot.get("cost_basis_usd", 0)))
+                    audit_event = audit_mod.audit_close(
+                        ticker=ticker,
+                        entry_consensus=pre_holdings_snapshot["entry_consensus"],
+                        realized_pnl_usd=realized,
+                        cost_basis_usd=pre_holdings_snapshot.get("cost_basis_usd", 0),
+                        exit_reason=trade.get("reason", "manual")[:60],
+                    )
+                    print(f"  📋 audit_close({ticker}): realized {audit_event['realized_pct']:+.2f}%, "
+                          f"Opt {'✓' if audit_event['specialists_correct']['market_analyst_optimist']['correct'] else '✗'}, "
+                          f"Pes {'✓' if audit_event['specialists_correct']['market_analyst_pessimist']['correct'] else '✗'}")
+                except Exception as e:
+                    bugs.log("HIGH", "audit",
+                              f"{ticker} audit_close failed: {e}",
+                              context={"ticker": ticker})
+        
+        # Set stops on BUY orders + snapshot entry consensus for audit later
         if side == "buy" and result.get("executed"):
             # Map PM's _usd-suffixed keys to set_risk_levels' kwarg names
             sl = trade.get("stop_loss_price_usd") or trade.get("stop_loss_usd")
@@ -170,6 +198,23 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
                     bugs.log("HIGH", "execution",
                               f"{ticker} set_risk_levels failed (no units?)",
                               context=trade)
+            # Snapshot entry consensus from the tick's risk input — needed for audit on close
+            try:
+                from predictions.fund import audit as audit_mod
+                spec = per_sym.get(ticker, {}) if per_sym else {}
+                snap = audit_mod.snapshot_entry_consensus(
+                    ticker=ticker,
+                    opt_score=spec.get("ma_optimist_score", 0.0),
+                    pes_score=spec.get("ma_pessimist_score", 0.0),
+                    se_score=spec.get("se_score", 0.0),
+                    risk_mgr_size_pct=float(trade.get("usd_amount", 0) / state.get("deposit_usd", 1) * 100),
+                    disagreement=spec.get("disagreement", 0.0),
+                )
+                state["holdings"][ticker]["entry_consensus"] = snap
+            except Exception as e:
+                bugs.log("MEDIUM", "execution",
+                          f"{ticker} entry_consensus snapshot failed: {e}",
+                          context={"ticker": ticker})
         
         results.append({"trade": trade, "result": result})
     

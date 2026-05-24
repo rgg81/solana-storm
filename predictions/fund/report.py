@@ -317,8 +317,57 @@ def build_report() -> str:
         lines.append(f"**PM summary:** {pm['summary']}")
         lines.append("")
     
-    # --- Section 6: Operational health
-    lines.append("## 6. Operational health")
+    # --- Section 6: Lessons state (rolling memory)
+    lines.append("## 6. Lessons state (rolling memory)")
+    lines.append("")
+    try:
+        from predictions.fund import lessons_io
+        fm = lessons_io.load_frontmatter()
+        closed = fm.get("total_closed_trades_audited", 0)
+        lines.append(f"**Audited closed trades:** {closed}")
+        lines.append("")
+        sb = fm.get("scoreboard") or {}
+        if closed > 0:
+            lines.append("### Specialist scoreboard")
+            lines.append("")
+            lines.append("| Specialist | Closed trades | Correct calls | Avg score on winners | Avg score on losers | Flag |")
+            lines.append("|---|---|---|---|---|---|")
+            for spec_name in ("market_analyst_optimist", "market_analyst_pessimist", "solana_expert"):
+                s = sb.get(spec_name, {})
+                ct = s.get("closed_trades_scored", 0)
+                cc = s.get("correct_directional_calls", 0)
+                rate = f"{cc}/{ct} ({cc/ct*100:.0f}%)" if ct > 0 else "n/a"
+                aow = s.get("avg_score_on_winners")
+                aol = s.get("avg_score_on_losers")
+                flag = ""
+                if s.get("over_confidence_flag"): flag = "⚠ over-confident"
+                elif s.get("over_caution_flag"): flag = "⚠ over-cautious"
+                lines.append(f"| {spec_name.replace('market_analyst_','MA-')} | {ct} | {rate} | {aow if aow is not None else 'n/a'} | {aol if aol is not None else 'n/a'} | {flag} |")
+            lines.append("")
+            
+            do = fm.get("disagreement_outcome") or {}
+            nonzero = [(k,v) for k,v in do.items() if isinstance(v, dict) and v.get("n", 0) > 0]
+            if nonzero:
+                lines.append("### Disagreement → outcome correlation")
+                lines.append("")
+                lines.append("| Spread bucket | N | Avg return | Win rate |")
+                lines.append("|---|---|---|---|")
+                for k, v in nonzero:
+                    lines.append(f"| {k} | {v['n']} | {v.get('avg_return_pct', 'n/a')}% | {v.get('win_rate', 'n/a')}% |")
+                lines.append("")
+        else:
+            lines.append("_No closed trades audited yet — cold start. Specialist scoreboards will populate after first close._")
+            lines.append("")
+        vr = fm.get("validated_rules_count", 0)
+        cr = fm.get("candidate_rules_count", 0)
+        lines.append(f"**Validated rules:** {vr}  •  **Candidate rules:** {cr}")
+        lines.append("")
+    except Exception as e:
+        lines.append(f"_(lessons file unavailable: {e})_")
+        lines.append("")
+    
+    # --- Section 7: Operational health
+    lines.append("## 7. Operational health")
     lines.append("")
     if not recent_bugs:
         lines.append("✅ No MEDIUM+ issues in last 24h")
