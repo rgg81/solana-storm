@@ -40,3 +40,5 @@ predictions/fund/state/
 
 # Fund tick reports (committed for audit trail) — only ignore tmp files
 predictions/fund/reports/*.tmp
+predictions/fund/state/article_body_cache/
+predictions/fund/state/sentiment_history.jsonl

@@ -311,6 +311,37 @@ def build_report() -> str:
                     lines.append(f"| {t} | {os_s} | {ow} | {ps_s} | {pw} | {sample if sample else '_no_data_'} |")
                 lines.append("")
         
+        # ===== Anchor vs override delta (NEW) =====
+        anchors = phase2_input.get("sentiment_anchors") or {}
+        anomalies = phase2_input.get("sentiment_anomalies") or {}
+        if anchors:
+            lines.append("### Sentiment anchor vs agent override")
+            lines.append("")
+            lines.append("Anchor = deterministic VADER+FinBERT composite × source-weight × time-decay. Agents see this and decide their own score. Deltas >0.30 require `override_reasoning`.")
+            lines.append("")
+            lines.append("| Ticker | Anchor | MA-Opt sent | Δ | MA-Pes sent | Δ | Anomaly |")
+            lines.append("|---|---|---|---|---|---|---|")
+            for t in universe:
+                a = anchors.get(t, {})
+                anchor = a.get("anchor_score", 0.0) if a.get("n_headlines", 0) > 0 else None
+                opt_sent = opt_sents.get(t)
+                pes_sent = pes_sents.get(t)
+                anc_str = f"{anchor:+.2f}" if anchor is not None else "n/a"
+                if anchor is not None and opt_sent is not None:
+                    d_opt = opt_sent - anchor
+                    d_opt_str = f"{d_opt:+.2f}{' ⚠' if abs(d_opt) > 0.30 else ''}"
+                else: d_opt_str = "n/a"
+                if anchor is not None and pes_sent is not None:
+                    d_pes = pes_sent - anchor
+                    d_pes_str = f"{d_pes:+.2f}{' ⚠' if abs(d_pes) > 0.30 else ''}"
+                else: d_pes_str = "n/a"
+                anom = anomalies.get(t)
+                anom_str = f"{anom['type']} z={anom['z_score']:+.1f}" if anom else "—"
+                opt_s_str = f"{opt_sent:+.2f}" if opt_sent is not None else "n/a"
+                pes_s_str = f"{pes_sent:+.2f}" if pes_sent is not None else "n/a"
+                lines.append(f"| {t} | {anc_str} | {opt_s_str} | {d_opt_str} | {pes_s_str} | {d_pes_str} | {anom_str} |")
+            lines.append("")
+        
         # Top BUY candidates + top AVOIDs with reasoning
         consensus_sorted = sorted(universe, 
                                     key=lambda t: -((opt_scores.get(t,0)+pes_scores.get(t,opt_scores.get(t,0))+se_scores.get(t,0))/3))

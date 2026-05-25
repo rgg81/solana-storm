@@ -242,6 +242,18 @@ def main():
     except Exception as e:
         output["rss_news"] = {"error": str(e)[:80]}
     
+    # === Build sentiment anchors (VADER + FinBERT + source-weight + decay) ===
+    try:
+        from predictions.fund import sentiment_pipeline
+        anchors, anomalies = sentiment_pipeline.build_anchors_from_phase2(output, max_body_fetches=6)
+        output["sentiment_anchors"] = anchors
+        output["sentiment_anomalies"] = anomalies
+        output["sentiment_anchor_block"] = sentiment_pipeline.format_for_agent_prompt(anchors, anomalies)
+    except Exception as e:
+        output["sentiment_anchors"] = {}
+        output["sentiment_anomalies"] = {}
+        output["sentiment_anchor_block"] = f"SENTIMENT_ANCHOR: failed ({type(e).__name__}: {str(e)[:80]})"
+
     out_path = REPO / "predictions" / "fund" / "state" / "tick_phase2_input.json"
     tmp = out_path.with_suffix(".tmp"); tmp.write_text(json.dumps(output, indent=2, default=str))
     tmp.rename(out_path)
