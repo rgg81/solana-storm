@@ -133,6 +133,18 @@ def summary_for_agent_prompt() -> str:
     if vr == 0 and cr == 0:
         lines.append("  No validated/candidate rules yet (cold start)")
     
+    # Per-symbol observations (item H)
+    psa = fm.get("per_symbol_specialist_accuracy") or {}
+    if psa:
+        traded = [t for t, d in psa.items() if d.get("closed_trades", 0) > 0]
+        bl = [t for t, d in psa.items() if d.get("blacklist_hint")]
+        if traded:
+            lines.append(f"  Per-symbol closed trades: " + ", ".join(
+                f"{t}={d['avg_realized_pct']:+.1f}%×{d['closed_trades']}" 
+                for t, d in psa.items() if d.get("closed_trades", 0) > 0))
+        if bl:
+            lines.append(f"  ⚠ Blacklist hints (≥2 closes avg <-5%): {', '.join(bl)}")
+    
     return "\n".join(lines)
 
 

@@ -159,6 +159,16 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
         result = acct.execute_trade(state, ticker, side, usd, price,
                                       est.fee_pct, est.slippage_pct,
                                       reason=trade.get("reason", "pm")[:200])
+        # Item K — slippage auto-calibration: compare est vs realized
+        # (For paper mode, realized = estimated; this becomes useful with live execution)
+        try:
+            from predictions.fund import risk_calibration
+            est_slip = est.slippage_pct
+            # In paper mode, we use est as realized — no calibration signal.
+            # When live: compute realized_slip from actual fill quote vs DexScreener mid-price
+            # risk_calibration.update_slippage_calibration(est_slip, realized_slip)
+        except Exception:
+            pass
         
         # If this was a SELL that closed the position (units → 0), audit it
         if side == "sell" and result.get("executed"):

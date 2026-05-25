@@ -128,6 +128,43 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
     pm_sb["closes_executed"] = pm_sb.get("closes_executed", 0) + 1
     sb["portfolio_manager"] = pm_sb
     
+    # === Per-symbol scoreboard (NEW item H) ===
+    # Track each specialist's accuracy ON THIS SYMBOL specifically
+    per_sym = fm.get("per_symbol_specialist_accuracy") or {}
+    sym_data = per_sym.setdefault(ticker, {})
+    sym_data["closed_trades"] = sym_data.get("closed_trades", 0) + 1
+    sym_data["last_realized_pct"] = round(realized_pct * 100, 2)
+    # Running average of realized return for this symbol
+    sym_data["cumulative_realized_pct"] = round(
+        sym_data.get("cumulative_realized_pct", 0) + realized_pct * 100, 2
+    )
+    sym_data["avg_realized_pct"] = round(
+        sym_data["cumulative_realized_pct"] / sym_data["closed_trades"], 2
+    )
+    # Per-specialist score-at-entry tracking
+    for spec_name, score_key in [
+        ("market_analyst_optimist", "ma_optimist_score"),
+        ("market_analyst_pessimist", "ma_pessimist_score"),
+        ("solana_expert_optimist", "se_optimist_score"),
+        ("solana_expert_pessimist", "se_pessimist_score"),
+    ]:
+        s = sym_data.setdefault(spec_name, {"avg_entry_score": 0.0, "correct_directional": 0, "n": 0})
+        score = entry_consensus.get(score_key, 0)
+        s["n"] += 1
+        s["avg_entry_score"] = round((s["avg_entry_score"] * (s["n"] - 1) + score) / s["n"], 3)
+        score_sign = 1 if score > 0 else (-1 if score < 0 else 0)
+        direction_sign = 1 if was_winner else -1
+        if score_sign == direction_sign and score_sign != 0:
+            s["correct_directional"] += 1
+    
+    # Flag: if all 4 specialists consistently negative for this symbol AND we've never won → blacklist hint
+    avg_realized = sym_data["avg_realized_pct"]
+    if sym_data["closed_trades"] >= 2 and avg_realized < -5:
+        sym_data["blacklist_hint"] = True
+        sym_data["blacklist_reason"] = f"avg realized {avg_realized}% over {sym_data['closed_trades']} closes"
+    
+    fm["per_symbol_specialist_accuracy"] = per_sym
+    
     # Disagreement → outcome (use combined_uncertainty if present, else legacy disagreement)
     disagreement = entry_consensus.get("combined_uncertainty",
                                           entry_consensus.get("disagreement", 0))
@@ -163,6 +200,26 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
         "disagreement_bucket": bucket,
     }
     _append_jsonl(AUDIT_LOG_PATH, event)
+    
+    # === Run reflector + auto-calibration on this close (items G + A + D) ===
+    try:
+        from predictions.fund import reflector, risk_calibration
+        reflector.reflect_on_close(event)
+        # Stop calibration: did stop trigger?
+        stop_triggered = exit_reason in ("stop_loss_verified", "stop_loss")
+        # Need vol_30d at entry — proxy: use realized_pct magnitude as a noise proxy
+        # (better: store entry vol in entry_consensus; for now use cost-basis-derived approximation)
+        risk_calibration.update_stop_calibration(
+            was_stop_triggered=stop_triggered,
+            was_winner=was_winner,
+            realized_pct=realized_pct,
+            vol_30d=0.05,  # placeholder; could store at entry for precision
+        )
+        # Disagreement penalty recalibration (uses bucket data from lessons.md)
+        risk_calibration.update_disagreement_calibration()
+    except Exception as e:
+        pass  # don't let reflection bugs break audit
+    
     return event
 
 

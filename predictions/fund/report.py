@@ -144,6 +144,56 @@ def build_report() -> str:
         lines.append(f"_(goal status unavailable: {e})_")
         lines.append("")
     
+    # --- Section 1.6: Regime status (NEW)
+    try:
+        from predictions.fund import regime
+        r = regime.combined_regime()
+        sol = r["sol"]; cor = r["correlation"]
+        lines.append("## 1.6 Market regime")
+        lines.append("")
+        if sol.get("data_status") == "ok":
+            lines.append(f"**SOL trend:** {sol['sol_trend']} (price ${sol['sol_current']} vs SMA200 ${sol['sol_sma200']}, SMA50 ${sol['sol_sma50']})")
+            lines.append(f"**SOL 30d vol:** {sol['sol_30d_vol_pct']}% daily → **{sol['sol_vol_regime']}**")
+        if cor.get("data_status") == "ok":
+            lines.append(f"**Universe correlation:** {cor['mean_pairwise_corr']} across {cor['n_pairs']} pairs → **{cor['corr_regime']}**")
+        if r["notes"]:
+            lines.append("")
+            lines.append("**Active risk adjustments:**")
+            for n in r["notes"]:
+                lines.append(f"- {n}")
+        ra = r["risk_adjustments"]
+        if ra["max_position_pct_multiplier"] != 1.0 or ra["buy_floor_adjustment"] != 0.0 or ra["max_deployed_multiplier"] != 1.0:
+            lines.append("")
+            lines.append(f"_Risk Mgr sees: position size × {ra['max_position_pct_multiplier']}, BUY floor +{ra['buy_floor_adjustment']:.2f}, deployed cap × {ra['max_deployed_multiplier']}_")
+        lines.append("")
+    except Exception as e:
+        lines.append(f"_(regime unavailable: {e})_")
+        lines.append("")
+    
+    # --- Section 1.7: Risk calibration (NEW — auto-tuned parameters)
+    try:
+        from predictions.fund import risk_calibration
+        calib = risk_calibration._load()
+        if calib:
+            lines.append("## 1.7 Risk calibration (auto-tuned)")
+            lines.append("")
+            mult = calib.get("stop_vol_multiplier", risk_calibration.DEFAULT_STOP_VOL_MULT)
+            coef = calib.get("slippage_coefficient", risk_calibration.DEFAULT_SLIPPAGE_COEF)
+            lines.append(f"- **stop_vol_multiplier**: {mult} (default {risk_calibration.DEFAULT_STOP_VOL_MULT})")
+            lines.append(f"- **slippage_coefficient**: {coef} (default {risk_calibration.DEFAULT_SLIPPAGE_COEF})")
+            pens = calib.get("disagreement_penalty_by_bucket")
+            if pens:
+                lines.append(f"- **disagreement penalties**: {pens}")
+            so = calib.get("stop_outcomes") or {}
+            if so.get("n_total", 0) > 0:
+                lines.append(f"- stop outcomes: {so['n_total']} total = {so.get('n_triggered_savings',0)} savings + {so.get('n_triggered_winners',0)} stopped-winners + {so.get('n_never_triggered',0)} never-triggered")
+            last = calib.get("last_adjustment_reason")
+            if last:
+                lines.append(f"- last adjustment: {last}")
+            lines.append("")
+    except Exception:
+        pass
+    
     # --- Section 2: Universe Scout
     lines.append("## 2. Universe selection")
     lines.append("")
