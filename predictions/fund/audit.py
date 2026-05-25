@@ -19,18 +19,25 @@ _STATE_DIR = Path(__file__).resolve().parent / "state"
 AUDIT_LOG_PATH = _STATE_DIR / "closed_trades_audit.jsonl"
 
 
-def snapshot_entry_consensus(ticker: str, opt_score: float, pes_score: float,
-                              se_score: float, risk_mgr_size_pct: float,
-                              disagreement: float) -> dict:
-    """Build the consensus snapshot dict that buy-side execution should store
-    in the position's `entry_consensus` field."""
+def snapshot_entry_consensus(ticker: str, ma_opt_score: float, ma_pes_score: float,
+                              se_opt_score: float, se_pes_score: float,
+                              risk_mgr_size_pct: float,
+                              market_disagreement: float,
+                              onchain_disagreement: float) -> dict:
+    """Build the consensus snapshot dict (4-specialist version).
+    
+    Stored in position's `entry_consensus` field for audit-on-close.
+    """
     return {
         "snapshot_unix": int(time.time()),
-        "optimist_score": opt_score,
-        "pessimist_score": pes_score,
-        "solana_expert_score": se_score,
-        "consensus": (opt_score + pes_score + se_score) / 3,
-        "disagreement": disagreement,
+        "ma_optimist_score": ma_opt_score,
+        "ma_pessimist_score": ma_pes_score,
+        "se_optimist_score": se_opt_score,
+        "se_pessimist_score": se_pes_score,
+        "consensus": (ma_opt_score + ma_pes_score + se_opt_score + se_pes_score) / 4,
+        "market_disagreement": market_disagreement,
+        "onchain_disagreement": onchain_disagreement,
+        "combined_uncertainty": max(market_disagreement, onchain_disagreement),
         "risk_mgr_max_size_pct": risk_mgr_size_pct,
     }
 
@@ -71,9 +78,10 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
     # For each specialist: was their score sign correct?
     correct_specialists = {}
     for spec_name, score_key in [
-        ("market_analyst_optimist", "optimist_score"),
-        ("market_analyst_pessimist", "pessimist_score"),
-        ("solana_expert", "solana_expert_score"),
+        ("market_analyst_optimist", "ma_optimist_score"),
+        ("market_analyst_pessimist", "ma_pessimist_score"),
+        ("solana_expert_optimist", "se_optimist_score"),
+        ("solana_expert_pessimist", "se_pessimist_score"),
     ]:
         score = entry_consensus.get(score_key, 0)
         score_sign = 1 if score > 0 else (-1 if score < 0 else 0)
@@ -107,10 +115,10 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
         
         # Flags
         if s["closed_trades_scored"] >= 3:
-            if spec_name == "market_analyst_optimist":
+            if spec_name in ("market_analyst_optimist", "solana_expert_optimist"):
                 aol = s.get("avg_score_on_losers")
                 s["over_confidence_flag"] = (aol or 0) > 0.30
-            elif spec_name == "market_analyst_pessimist":
+            elif spec_name in ("market_analyst_pessimist", "solana_expert_pessimist"):
                 aow = s.get("avg_score_on_winners")
                 s["over_caution_flag"] = (aow or 0) < -0.10
         sb[spec_name] = s
@@ -120,8 +128,9 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
     pm_sb["closes_executed"] = pm_sb.get("closes_executed", 0) + 1
     sb["portfolio_manager"] = pm_sb
     
-    # Disagreement → outcome
-    disagreement = entry_consensus.get("disagreement", 0)
+    # Disagreement → outcome (use combined_uncertainty if present, else legacy disagreement)
+    disagreement = entry_consensus.get("combined_uncertainty",
+                                          entry_consensus.get("disagreement", 0))
     bucket = _bucket_for_disagreement(disagreement)
     do = fm.get("disagreement_outcome") or {}
     b = do.get(bucket) or {"n": 0, "avg_return_pct": 0, "win_rate": 0}

@@ -115,6 +115,35 @@ def build_report() -> str:
                           f"{_fmt_usd(h.get('take_profit_price_usd'), 6)} |")
         lines.append("")
     
+    # --- Section 1.5: Goal status (NEW)
+    try:
+        from predictions.fund import goals
+        lines.append("## 1.5 Fund goal status")
+        lines.append("")
+        gs = goals.compute_status()
+        lines.append(f"**Target:** +{gs['monthly_target_pct']:.1f}% monthly  •  "
+                      f"**Floor:** +{gs['monthly_floor_pct']:.1f}%  •  "
+                      f"**Stretch:** +{gs['monthly_stretch_pct']:.1f}%")
+        lines.append("")
+        lines.append(f"| Metric | Current | Target | Status |")
+        lines.append(f"|---|---|---|---|")
+        rr = gs.get('monthly_runrate_pct')
+        rr_str = f"{rr:+.2f}%/mo" if rr is not None else "n/a"
+        target_str = f"+{gs['monthly_target_pct']:.1f}%/mo"
+        lines.append(f"| Monthly run-rate | {rr_str} | {target_str} | **{gs['status']}** |")
+        lines.append(f"| Sharpe (ann) | {gs['current_sharpe']:.2f} | ≥{gs['target_sharpe']:.1f} | {'✓' if gs['current_sharpe'] >= gs['target_sharpe'] else '—'} |")
+        lines.append(f"| Hit rate | {gs.get('hit_rate_pct') or 'n/a'}% | ≥{gs['target_hit_rate_pct']:.0f}% | — |")
+        lines.append(f"| Current DD | {gs['current_dd_pct']:.2f}% | > {gs['max_drawdown_threshold_pct']:.0f}% | {'⚠' if gs['current_dd_pct'] < -10 else '✓'} |")
+        lines.append("")
+        lines.append(f"**Posture recommendation:** {gs['posture_recommendation']}")
+        if gs['maturity_bucket'] == 'cold_start':
+            lines.append("")
+            lines.append("_Sample size too small to judge; targets are direction, not verdict._")
+        lines.append("")
+    except Exception as e:
+        lines.append(f"_(goal status unavailable: {e})_")
+        lines.append("")
+    
     # --- Section 2: Universe Scout
     lines.append("## 2. Universe selection")
     lines.append("")
@@ -142,10 +171,25 @@ def build_report() -> str:
     opt_reasons = {s["ticker"]: s for s in optimist.get("scores", [])}
     pes_reasons = {s["ticker"]: s for s in pessimist.get("scores", [])}
     
+    # Solana Expert split-aware: prefer split if present, fall back to unified
+    se_opt_data = _safe_load("/tmp/smaf_solana_expert_optimist.json")
+    se_pes_data = _safe_load("/tmp/smaf_solana_expert_pessimist.json")
+    if se_opt_data and se_pes_data:
+        se_opt_scores = {s["ticker"]: s["score"] for s in se_opt_data.get("scores", [])}
+        se_pes_scores = {s["ticker"]: s["score"] for s in se_pes_data.get("scores", [])}
+        has_se_split = True
+    else:
+        se_opt_scores = se_scores
+        se_pes_scores = se_scores
+        has_se_split = False
+
     if opt_scores or pes_scores or se_scores:
         # If both opt and pes are present, show 4-col table
         has_both = bool(opt_scores) and bool(pes_scores)
-        if has_both:
+        if has_both and has_se_split:
+            lines.append("| Ticker | MA-Opt | MA-Pes | SE-Opt | SE-Pes | Consensus | Mkt-Disag | OnChain-Disag |")
+            lines.append("|---|---|---|---|---|---|---|---|")
+        elif has_both:
             lines.append("| Ticker | Optimist | Pessimist | Solana Exp | Consensus | Disagreement |")
             lines.append("|---|---|---|---|---|---|")
         else:
@@ -154,18 +198,26 @@ def build_report() -> str:
         universe = phase2_input.get("universe") or list(set(opt_scores) | set(pes_scores) | set(se_scores))
         for t in universe:
             opt = opt_scores.get(t, 0.0)
-            pes = pes_scores.get(t, opt)  # fallback to opt if single MA
-            se = se_scores.get(t, 0.0)
-            if has_both:
-                consensus = (opt + pes + se) / 3
-                disagree = abs(opt - pes)
+            pes = pes_scores.get(t, opt)
+            seo = se_opt_scores.get(t, 0.0)
+            sep = se_pes_scores.get(t, seo)
+            if has_both and has_se_split:
+                consensus = (opt + pes + seo + sep) / 4
+                mkt_disag = abs(opt - pes)
+                oc_disag = abs(seo - sep)
+                combined = max(mkt_disag, oc_disag)
                 mark = ""
-                if disagree > 0.7: mark = " ⚠️ split"
-                elif disagree > 0.4: mark = " ⚡ moderate"
-                lines.append(f"| {t} | {opt:+.2f} | {pes:+.2f} | {se:+.2f} | **{consensus:+.2f}** | {disagree:.2f}{mark} |")
+                if combined > 0.7: mark = " ⚠split"
+                elif combined > 0.4: mark = " ⚡mod"
+                lines.append(f"| {t} | {opt:+.2f} | {pes:+.2f} | {seo:+.2f} | {sep:+.2f} | **{consensus:+.2f}** | {mkt_disag:.2f} | {oc_disag:.2f}{mark} |")
+            elif has_both:
+                consensus = (opt + pes + seo) / 3
+                disagree = abs(opt - pes)
+                mark = " ⚠split" if disagree > 0.7 else " ⚡mod" if disagree > 0.4 else ""
+                lines.append(f"| {t} | {opt:+.2f} | {pes:+.2f} | {seo:+.2f} | **{consensus:+.2f}** | {disagree:.2f}{mark} |")
             else:
-                consensus = (opt + se) / 2
-                lines.append(f"| {t} | {opt:+.2f} | {se:+.2f} | **{consensus:+.2f}** |")
+                consensus = (opt + seo) / 2
+                lines.append(f"| {t} | {opt:+.2f} | {seo:+.2f} | **{consensus:+.2f}** |")
         lines.append("")
         
         # ===== Sentiment breakdown subsection =====

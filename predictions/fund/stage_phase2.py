@@ -98,7 +98,7 @@ def main():
     tops = coingecko_top.fetch_top_solana(per_page=100)
     cgid = {t["ticker"]: t["cg_id"] for t in tops}
     
-    from predictions.fund import lessons_io
+    from predictions.fund import lessons_io, goals
     output = {
         "phase": "specialists_input",
         "run_time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -106,6 +106,7 @@ def main():
         "per_symbol": {},
         "performance_state": performance.format_for_agent_prompt(performance.compute()),
         "lessons_summary": lessons_io.summary_for_agent_prompt(),
+        "goal_status": goals.format_for_agent_prompt(),
         "network_health": onchain_stats.network_health(),
         "regime_notes": scout_out.get("reasoning", ""),
     }
