@@ -17,6 +17,7 @@ import re, json, time
 from pathlib import Path
 
 LESSONS_PATH = Path(__file__).resolve().parent / "lessons.md"
+STATE_DIR = Path(__file__).resolve().parent / "state"
 
 
 def _try_import_yaml():
@@ -140,12 +141,117 @@ def summary_for_agent_prompt() -> str:
         bl = [t for t, d in psa.items() if d.get("blacklist_hint")]
         if traded:
             lines.append(f"  Per-symbol closed trades: " + ", ".join(
-                f"{t}={d['avg_realized_pct']:+.1f}%×{d['closed_trades']}" 
+                f"{t}={d['avg_realized_pct']:+.1f}%×{d['closed_trades']}"
                 for t, d in psa.items() if d.get("closed_trades", 0) > 0))
         if bl:
             lines.append(f"  ⚠ Blacklist hints (≥2 closes avg <-5%): {', '.join(bl)}")
-    
+
+    # Reflections (Phase 6 — what-if + Reflector LLM output)
+    refl_block = reflections_summary()
+    if refl_block:
+        lines.append("")
+        lines.append(refl_block)
+
     return "\n".join(lines)
+
+
+# ============================================================
+# Phase 6 — Reflections
+# ============================================================
+
+REFL_PATH = STATE_DIR / "lessons_reflections.jsonl"
+
+
+def _load_reflections() -> list[dict]:
+    if not REFL_PATH.exists(): return []
+    rows = []
+    for line in REFL_PATH.read_text().splitlines():
+        if not line.strip(): continue
+        try: rows.append(json.loads(line))
+        except Exception: pass
+    return rows
+
+
+def append_reflection(row: dict) -> None:
+    """Append a single Reflector output row (one candidate, one confirmation, etc.)."""
+    existing = REFL_PATH.read_text() if REFL_PATH.exists() else ""
+    tmp = REFL_PATH.with_suffix(REFL_PATH.suffix + ".tmp")
+    tmp.write_text(existing + json.dumps(row, default=str) + "\n")
+    tmp.rename(REFL_PATH)
+
+
+def _aggregate_reflections() -> dict:
+    """Walk lessons_reflections.jsonl, fold confirmations into candidates,
+    return current state: {candidates: [...], validated: [...], rejected: [...]}.
+
+    Promotion rule: candidate with ≥3 confirming observations → validated.
+    Demotion rule: candidate with ≥3 disconfirming observations → rejected.
+    """
+    rows = _load_reflections()
+    by_id: dict[str, dict] = {}
+
+    for r in rows:
+        if r.get("kind_row") == "new_candidate":
+            cid = r["candidate_id"]
+            by_id.setdefault(cid, {
+                "candidate_id": cid,
+                "kind": r.get("kind"),
+                "pattern": r.get("pattern"),
+                "candidate_lesson": r.get("candidate_lesson"),
+                "affects": r.get("affects", []),
+                "supporting_count": r.get("supporting_count", 0),
+                "disconfirming_count": 0,
+                "status": "candidate",
+                "first_seen_tick": r.get("tick_id"),
+                "last_updated_tick": r.get("tick_id"),
+            })
+        elif r.get("kind_row") == "confirmation":
+            cid = r.get("prior_candidate_id")
+            if not cid or cid not in by_id: continue
+            c = by_id[cid]
+            if r.get("kind") == "confirming":
+                c["supporting_count"] = max(c["supporting_count"], r.get("new_supporting_count", c["supporting_count"] + 1))
+            elif r.get("kind") == "disconfirming":
+                c["disconfirming_count"] += 1
+            c["last_updated_tick"] = r.get("tick_id")
+            c["status"] = r.get("new_status_suggestion", c["status"])
+
+    # Apply promotion/demotion rules
+    candidates, validated, rejected = [], [], []
+    for c in by_id.values():
+        if c["supporting_count"] >= 3 and c["disconfirming_count"] < 3:
+            c["status"] = "validated"
+            validated.append(c)
+        elif c["disconfirming_count"] >= 3:
+            c["status"] = "rejected"
+            rejected.append(c)
+        else:
+            candidates.append(c)
+    return {"candidates": candidates, "validated": validated, "rejected": rejected,
+            "total_reflection_rows": len(rows)}
+
+
+def reflections_summary(max_chars: int = 1200) -> str:
+    """Compact block for agent prompts — appended to lessons summary.
+
+    Surfaces validated reflection-rules + top candidates (most-supported)."""
+    agg = _aggregate_reflections()
+    if agg["total_reflection_rows"] == 0:
+        return ""
+    lines = ["REFLECTIONS (post-tick learning, predictions/fund/state/lessons_reflections.jsonl):"]
+    v = agg["validated"]
+    if v:
+        lines.append(f"  Validated reflection-rules: {len(v)}")
+        for c in v[:5]:
+            lines.append(f"    ✓ [{c['kind']}] {c['candidate_lesson'][:180]} (n={c['supporting_count']})")
+    c_list = sorted(agg["candidates"], key=lambda x: -x.get("supporting_count", 0))[:3]
+    if c_list:
+        lines.append(f"  Top candidates (need more confirms):")
+        for c in c_list:
+            lines.append(f"    · [{c['kind']}] {c['candidate_lesson'][:180]} "
+                          f"(supports={c['supporting_count']} discon={c['disconfirming_count']})")
+    out = "\n".join(lines)
+    return out[:max_chars]
 
 
 if __name__ == "__main__":

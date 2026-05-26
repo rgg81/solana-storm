@@ -508,11 +508,65 @@ def build_report() -> str:
                 for b in by_sev[sev][:5]:
                     lines.append(f"- [{b.get('component')}] {b.get('message')}")
     lines.append("")
-    
+
+    # =====================================================
+    # Section 8 — Post-tick reflection (Phase 6)
+    # =====================================================
+    try:
+        from predictions.fund import lessons_io
+        from pathlib import Path as _Path
+        agg = lessons_io._aggregate_reflections()
+        refl_inputs_path = _Path(__file__).resolve().parent / "state" / "reflection_inputs.jsonl"
+        latest_phase6 = None
+        if refl_inputs_path.exists():
+            for ln in reversed(refl_inputs_path.read_text().splitlines()):
+                if ln.strip():
+                    try:
+                        latest_phase6 = json.loads(ln); break
+                    except Exception: pass
+
+        if agg["total_reflection_rows"] > 0 or latest_phase6:
+            lines.append("## 8. Post-tick reflection (Phase 6)")
+            lines.append("")
+            if latest_phase6:
+                lines.append(f"**Phase 6 last run:** tick {latest_phase6.get('tick_id')} — "
+                              f"{latest_phase6.get('n_whatifs', 0)} what-ifs, "
+                              f"{latest_phase6.get('n_triggers', 0)} triggers, "
+                              f"LLM dispatched: {latest_phase6.get('dispatched_llm', False)}")
+                tk = latest_phase6.get("trigger_kinds") or []
+                if tk: lines.append(f"**Trigger kinds:** {', '.join(tk)}")
+                lines.append("")
+            if agg["validated"]:
+                lines.append(f"### Validated reflection-rules ({len(agg['validated'])})")
+                lines.append("")
+                lines.append("| Kind | Lesson | Affects | n |")
+                lines.append("|---|---|---|---|")
+                for c in agg["validated"][:10]:
+                    lines.append(f"| {c.get('kind')} | {(c.get('candidate_lesson') or '')[:140]} | "
+                                  f"{', '.join(c.get('affects') or [])} | {c.get('supporting_count')} |")
+                lines.append("")
+            if agg["candidates"]:
+                lines.append(f"### Candidate reflection-rules ({len(agg['candidates'])} — need more confirms)")
+                lines.append("")
+                lines.append("| Kind | Lesson | Supports | Disconfirms |")
+                lines.append("|---|---|---|---|")
+                for c in sorted(agg["candidates"], key=lambda x: -x.get("supporting_count", 0))[:10]:
+                    lines.append(f"| {c.get('kind')} | {(c.get('candidate_lesson') or '')[:140]} | "
+                                  f"{c.get('supporting_count')} | {c.get('disconfirming_count')} |")
+                lines.append("")
+            if agg["rejected"]:
+                lines.append(f"_Rejected (≥3 disconfirms): {len(agg['rejected'])}_")
+                lines.append("")
+    except Exception as e:
+        lines.append(f"## 8. Post-tick reflection (Phase 6)")
+        lines.append(f"")
+        lines.append(f"_Reflection section unavailable: {e}_")
+        lines.append("")
+
     # Footer
     lines.append("---")
     lines.append(f"_Generated {now.strftime('%Y-%m-%d %H:%M:%S UTC')} — `predictions/fund/report.py`_")
-    
+
     return "\n".join(lines)
 
 
