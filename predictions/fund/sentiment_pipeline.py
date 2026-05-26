@@ -149,9 +149,9 @@ def format_for_agent_prompt(per_symbol_anchors: dict, anomalies: dict) -> str:
     """Compact block — what agents see as the deterministic sentiment anchor + anomalies."""
     if not per_symbol_anchors:
         return "SENTIMENT_ANCHOR: no data this tick"
-    lines = ["SENTIMENT_ANCHOR (deterministic: VADER × source-authority × time-decay):"]
-    lines.append("  Agents: this is the deterministic baseline. Your own news_sentiment.score is the LLM verdict.")
-    lines.append("  If |your_score - anchor| > 0.30, you MUST include `override_reasoning` citing what the anchor missed.")
+    lines = ["NLP SENTIMENT SIGNALS (VADER + FinBERT, source-weighted + time-decayed):"]
+    lines.append("  These are DATA INPUTS to help your decision — NOT a constraint.")
+    lines.append("  Trust your judgment. Cite them only when relevant; ignore them when they obviously miss context.")
     lines.append("")
     for ticker in sorted(per_symbol_anchors.keys()):
         anchor = per_symbol_anchors[ticker]
