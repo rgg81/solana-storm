@@ -511,6 +511,8 @@ def build_report() -> str:
 
     # =====================================================
     # Section 8 — Post-tick reflection (Phase 6)
+    # Informational — surfaces decisions that paid off AND decisions worth
+    # revisiting, symmetrically. No verdicts on individual agents.
     # =====================================================
     try:
         from predictions.fund import lessons_io
@@ -528,34 +530,68 @@ def build_report() -> str:
         if agg["total_reflection_rows"] > 0 or latest_phase6:
             lines.append("## 8. Post-tick reflection (Phase 6)")
             lines.append("")
+            lines.append("_Informational. Surfaces what we now know about prior decisions — both what worked and what's worth revisiting. No verdicts on individual agents; the team decides jointly._")
+            lines.append("")
             if latest_phase6:
                 lines.append(f"**Phase 6 last run:** tick {latest_phase6.get('tick_id')} — "
                               f"{latest_phase6.get('n_whatifs', 0)} what-ifs, "
                               f"{latest_phase6.get('n_triggers', 0)} triggers, "
                               f"LLM dispatched: {latest_phase6.get('dispatched_llm', False)}")
                 tk = latest_phase6.get("trigger_kinds") or []
-                if tk: lines.append(f"**Trigger kinds:** {', '.join(tk)}")
+                if tk:
+                    good_tk = [k for k in tk if k.startswith(("good_", "premature_")) is False or k.startswith("good_")]
+                    revisit_tk = [k for k in tk if "missed" in k or "premature" in k or "underwater" in k]
+                    if good_tk: lines.append(f"  · **Decisions that paid off (this run):** {', '.join(good_tk)}")
+                    if revisit_tk: lines.append(f"  · **Worth revisiting (this run):** {', '.join(revisit_tk)}")
                 lines.append("")
+
+            # Split validated + candidates into "decisions that paid off" vs "worth revisiting"
+            def _categorize(c):
+                k = (c.get("kind") or "")
+                if k in ("good_rejection", "good_exit", "good_entry"): return "paid_off"
+                if k in ("missed_winner", "premature_exit", "entry_underwater", "over_rejection"): return "revisit"
+                return "neutral"
+
+            paid_off_v = [c for c in agg["validated"] if _categorize(c) == "paid_off"]
+            revisit_v = [c for c in agg["validated"] if _categorize(c) == "revisit"]
+            neutral_v = [c for c in agg["validated"] if _categorize(c) == "neutral"]
+
             if agg["validated"]:
-                lines.append(f"### Validated reflection-rules ({len(agg['validated'])})")
+                lines.append(f"### Validated patterns ({len(agg['validated'])})")
                 lines.append("")
-                lines.append("| Kind | Lesson | Affects | n |")
-                lines.append("|---|---|---|---|")
-                for c in agg["validated"][:10]:
-                    lines.append(f"| {c.get('kind')} | {(c.get('candidate_lesson') or '')[:140]} | "
-                                  f"{', '.join(c.get('affects') or [])} | {c.get('supporting_count')} |")
-                lines.append("")
+                if paid_off_v:
+                    lines.append(f"**Decisions that paid off ({len(paid_off_v)})**")
+                    lines.append("")
+                    lines.append("| Pattern | Lesson | n |")
+                    lines.append("|---|---|---|")
+                    for c in paid_off_v[:5]:
+                        lines.append(f"| {c.get('pattern','')[:120]} | {(c.get('candidate_lesson') or '')[:120]} | {c.get('supporting_count')} |")
+                    lines.append("")
+                if revisit_v:
+                    lines.append(f"**Worth revisiting ({len(revisit_v)})**")
+                    lines.append("")
+                    lines.append("| Pattern | Lesson | n |")
+                    lines.append("|---|---|---|")
+                    for c in revisit_v[:5]:
+                        lines.append(f"| {c.get('pattern','')[:120]} | {(c.get('candidate_lesson') or '')[:120]} | {c.get('supporting_count')} |")
+                    lines.append("")
+                if neutral_v:
+                    lines.append(f"**Calibration observations ({len(neutral_v)})**")
+                    lines.append("")
+                    for c in neutral_v[:5]:
+                        lines.append(f"- {c.get('candidate_lesson', '')[:160]} (n={c.get('supporting_count')})")
+                    lines.append("")
+
             if agg["candidates"]:
-                lines.append(f"### Candidate reflection-rules ({len(agg['candidates'])} — need more confirms)")
+                lines.append(f"### Candidate patterns ({len(agg['candidates'])} — need more confirms)")
                 lines.append("")
-                lines.append("| Kind | Lesson | Supports | Disconfirms |")
-                lines.append("|---|---|---|---|")
+                lines.append("| Pattern | Supports | Disconfirms |")
+                lines.append("|---|---|---|")
                 for c in sorted(agg["candidates"], key=lambda x: -x.get("supporting_count", 0))[:10]:
-                    lines.append(f"| {c.get('kind')} | {(c.get('candidate_lesson') or '')[:140]} | "
-                                  f"{c.get('supporting_count')} | {c.get('disconfirming_count')} |")
+                    lines.append(f"| {c.get('pattern','')[:140]} | {c.get('supporting_count')} | {c.get('disconfirming_count')} |")
                 lines.append("")
             if agg["rejected"]:
-                lines.append(f"_Rejected (≥3 disconfirms): {len(agg['rejected'])}_")
+                lines.append(f"_Patterns that did not hold up (≥3 disconfirms): {len(agg['rejected'])}_")
                 lines.append("")
     except Exception as e:
         lines.append(f"## 8. Post-tick reflection (Phase 6)")

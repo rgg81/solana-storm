@@ -32,10 +32,12 @@ REFL_INPUTS_PATH = STATE / "reflection_inputs.jsonl"
 REFL_OUT_PATH = Path("/tmp/smaf_reflector_input.json")
 REFL_LESSONS_PATH = STATE / "lessons_reflections.jsonl"  # Reflector writes here
 
-# Trigger thresholds (tunable)
-TRIG_REJECT_6H_PCT = 5.0
-TRIG_REJECT_24H_PCT = 10.0
-TRIG_SELL_CONT_6H_PCT = 5.0
+# Trigger thresholds (tunable). All thresholds apply BOTH directions —
+# the system reflects on good decisions and revisit-worthy ones symmetrically.
+TRIG_REJECT_6H_PCT = 5.0      # |delta| threshold for 6h rejection reflection
+TRIG_REJECT_24H_PCT = 10.0    # |delta| threshold for 24h rejection reflection
+TRIG_SELL_CONT_6H_PCT = 5.0   # |delta| threshold for 6h sell-follow-up
+TRIG_ENTRY_6H_PCT = 5.0       # |delta| threshold for 6h entry-validation
 TRIG_FORCE_AFTER_TICKS = 4
 
 
@@ -110,18 +112,42 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
 
 
 def _classify_triggers(whatifs: list[dict]) -> list[dict]:
-    """Identify which what-ifs constitute 'interesting' patterns worth LLM reflection."""
+    """Identify which what-ifs constitute interesting patterns worth LLM reflection.
+
+    Symmetric — surfaces both wins and revisit-worthy outcomes.
+    """
     triggers = []
     for w in whatifs:
         tag = (w.get("prior_decision_tag") or "")
         delta = w.get("delta_pct") or 0
         ticks = w.get("ticks_ago")
-        if tag.startswith("REJECT") and ticks == 1 and delta >= TRIG_REJECT_6H_PCT:
-            triggers.append({**w, "trigger_kind": "missed_winner_6h"})
-        elif tag.startswith("REJECT") and ticks == 4 and delta >= TRIG_REJECT_24H_PCT:
-            triggers.append({**w, "trigger_kind": "missed_winner_24h"})
-        elif tag.startswith("SELL_EXECUTED") and ticks == 1 and delta >= TRIG_SELL_CONT_6H_PCT:
-            triggers.append({**w, "trigger_kind": "premature_exit_6h"})
+
+        # REJECTIONS — both directions
+        if tag.startswith("REJECT") and ticks == 1:
+            if delta >= TRIG_REJECT_6H_PCT:
+                triggers.append({**w, "trigger_kind": "missed_winner_6h"})
+            elif delta <= -TRIG_REJECT_6H_PCT:
+                triggers.append({**w, "trigger_kind": "good_rejection_6h"})
+        elif tag.startswith("REJECT") and ticks == 4:
+            if delta >= TRIG_REJECT_24H_PCT:
+                triggers.append({**w, "trigger_kind": "missed_winner_24h"})
+            elif delta <= -TRIG_REJECT_24H_PCT:
+                triggers.append({**w, "trigger_kind": "good_rejection_24h"})
+
+        # SELLS — both directions
+        elif tag.startswith("SELL_EXECUTED") and ticks == 1:
+            if delta >= TRIG_SELL_CONT_6H_PCT:
+                triggers.append({**w, "trigger_kind": "premature_exit_6h"})
+            elif delta <= -TRIG_SELL_CONT_6H_PCT:
+                triggers.append({**w, "trigger_kind": "good_exit_6h"})
+
+        # ENTRIES — early validation (only up-move flagged; down is captured at SL/TP close)
+        elif tag.startswith("BUY_EXECUTED") and ticks == 1:
+            if delta >= TRIG_ENTRY_6H_PCT:
+                triggers.append({**w, "trigger_kind": "good_entry_6h"})
+            elif delta <= -TRIG_ENTRY_6H_PCT:
+                triggers.append({**w, "trigger_kind": "entry_underwater_6h"})
+
     return triggers
 
 
