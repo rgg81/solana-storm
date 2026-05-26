@@ -99,9 +99,12 @@ def main():
     cgid = {t["ticker"]: t["cg_id"] for t in tops}
     
     from predictions.fund import lessons_io, goals, regime, risk_calibration, reflector
+    charter_path = REPO / "predictions" / "fund" / "team_charter.md"
+    team_charter = charter_path.read_text() if charter_path.exists() else ""
     output = {
         "phase": "specialists_input",
         "run_time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "team_charter": team_charter,
         "universe": [s["ticker"] for s in selected],
         "per_symbol": {},
         "performance_state": performance.format_for_agent_prompt(performance.compute()),

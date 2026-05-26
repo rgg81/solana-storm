@@ -81,6 +81,8 @@ def build_report() -> str:
     lines = []
     lines.append(f"# SMAF Tick {tick_n} — {now.strftime('%Y-%m-%d %H:%M UTC')}")
     lines.append("")
+    lines.append("> _The tools are the data. The team is responsible for the decisions. Risk management is non-negotiable._")
+    lines.append("")
     
     # --- Section 1: Account snapshot
     lines.append("## 1. Account snapshot")
