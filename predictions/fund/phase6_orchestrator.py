@@ -5,11 +5,10 @@ Pipeline:
 2. Compute what-ifs vs prior snapshots
 3. Decide whether to dispatch the Reflector LLM
 4. (Caller dispatches the LLM if requested; this orchestrator returns the input path)
-
-This is callable from a single line at the end of any tick:
-    >>> from predictions.fund import phase6_orchestrator
-    >>> r = phase6_orchestrator.run()
-    >>> if r['dispatch_llm']: dispatch_reflector_agent(r['reflector_input_path'])
+5. After Reflector LLM responds, caller calls `persist_reflector_output(path)`
+   to append the full Reflector output (summary, watchlist, decision_outcomes)
+   to state/reflector_runs.jsonl AND append any candidate/confirmation rows
+   to state/lessons_reflections.jsonl.
 
 Idempotent: re-running on the same tick is a no-op (the snapshot check returns 0).
 """
@@ -20,9 +19,102 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO))
 
-from predictions.fund import universe_price_history as uph, stage_phase6, regime
+from predictions.fund import universe_price_history as uph, stage_phase6, regime, lessons_io
 
 STATE = Path(__file__).resolve().parent / "state"
+REFLECTOR_RUNS_PATH = STATE / "reflector_runs.jsonl"
+
+
+def _append_jsonl(path: Path, row: dict) -> None:
+    existing = path.read_text() if path.exists() else ""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(existing + json.dumps(row, default=str) + "\n")
+    tmp.rename(path)
+
+
+def persist_reflector_output(reflector_json_path: str | Path,
+                              tick_id: int | None = None) -> dict:
+    """Persist the Reflector subagent's full output to:
+    - state/reflector_runs.jsonl (full run audit trail — summary, watchlist, decisions)
+    - state/lessons_reflections.jsonl (only candidate/confirmation rows for aggregation)
+
+    Idempotent: refuses to persist if the last reflector_runs.jsonl row has the same tick_id.
+    Returns: {persisted: bool, n_candidates: int, n_confirmations: int, tick_id: int}
+    """
+    p = Path(reflector_json_path)
+    if not p.exists():
+        return {"persisted": False, "error": f"no file at {p}"}
+    data = json.loads(p.read_text())
+    if tick_id is None:
+        tick_id = data.get("tick_id") or (uph.latest_tick_id() or 0)
+
+    # Idempotency guard
+    if REFLECTOR_RUNS_PATH.exists():
+        for line in reversed(REFLECTOR_RUNS_PATH.read_text().splitlines()):
+            if line.strip():
+                try:
+                    if json.loads(line).get("tick_id") == tick_id:
+                        return {"persisted": False, "reason": "already_persisted", "tick_id": tick_id}
+                    break
+                except Exception: pass
+
+    # Persist full run
+    run_row = {
+        "tick_id": tick_id,
+        "run_time_utc": data.get("run_time_utc"),
+        "summary": data.get("summary"),
+        "notes_for_watchlist": data.get("notes_for_watchlist", []),
+        "decision_outcomes_summary": data.get("decision_outcomes_summary", {}),
+        "n_new_candidates": len(data.get("new_candidates", [])),
+        "n_confirmations": len(data.get("confirmations", [])),
+    }
+    _append_jsonl(REFLECTOR_RUNS_PATH, run_row)
+
+    # Persist candidates + confirmations (the aggregation pipeline expects these)
+    import uuid
+    n_cand = 0
+    for c in data.get("new_candidates", []):
+        cid = c.get("candidate_id") or f"cand_{tick_id}_{uuid.uuid4().hex[:8]}"
+        row = {
+            "kind_row": "new_candidate",
+            "candidate_id": cid,
+            "tick_id": tick_id,
+            "kind": c.get("kind"),
+            "pattern": c.get("pattern"),
+            "candidate_lesson": c.get("candidate_lesson"),
+            "affects": c.get("affects", []),
+            "supporting_count": c.get("supporting_count", 1),
+            "supporting_what_ifs": c.get("supporting_what_ifs", []),
+        }
+        lessons_io.append_reflection(row)
+        n_cand += 1
+
+    n_conf = 0
+    for cf in data.get("confirmations", []):
+        row = {
+            "kind_row": "confirmation",
+            "prior_candidate_id": cf.get("prior_candidate_id"),
+            "tick_id": tick_id,
+            "kind": cf.get("kind"),
+            "evidence": cf.get("evidence"),
+            "new_supporting_count": cf.get("new_supporting_count"),
+            "new_status_suggestion": cf.get("new_status_suggestion"),
+        }
+        lessons_io.append_reflection(row)
+        n_conf += 1
+
+    return {"persisted": True, "tick_id": tick_id, "n_candidates": n_cand,
+            "n_confirmations": n_conf, "n_watchlist": len(data.get("notes_for_watchlist", []))}
+
+
+def latest_reflector_run() -> dict | None:
+    """Return the most recent reflector run row (used by report.py Section 8)."""
+    if not REFLECTOR_RUNS_PATH.exists(): return None
+    for line in reversed(REFLECTOR_RUNS_PATH.read_text().splitlines()):
+        if line.strip():
+            try: return json.loads(line)
+            except Exception: pass
+    return None
 
 
 def run(regime_label: str | None = None) -> dict:

@@ -527,7 +527,11 @@ def build_report() -> str:
                         latest_phase6 = json.loads(ln); break
                     except Exception: pass
 
-        if agg["total_reflection_rows"] > 0 or latest_phase6:
+        # Pull the latest Reflector LLM run (full output: summary, watchlist, decisions)
+        from predictions.fund import phase6_orchestrator
+        latest_refl = phase6_orchestrator.latest_reflector_run()
+
+        if agg["total_reflection_rows"] > 0 or latest_phase6 or latest_refl:
             lines.append("## 8. Post-tick reflection (Phase 6)")
             lines.append("")
             lines.append("_Informational. Surfaces what we now know about prior decisions — both what worked and what's worth revisiting. No verdicts on individual agents; the team decides jointly._")
@@ -544,6 +548,53 @@ def build_report() -> str:
                     if good_tk: lines.append(f"  · **Decisions that paid off (this run):** {', '.join(good_tk)}")
                     if revisit_tk: lines.append(f"  · **Worth revisiting (this run):** {', '.join(revisit_tk)}")
                 lines.append("")
+
+            # Latest Reflector LLM output — full summary, watchlist, decision outcomes
+            if latest_refl:
+                lines.append(f"### Reflector summary (tick {latest_refl.get('tick_id')})")
+                lines.append("")
+                lines.append(f"> {latest_refl.get('summary', '') or '_(no summary)_'}")
+                lines.append("")
+
+                # Decision outcomes scoreboard
+                do = latest_refl.get("decision_outcomes_summary") or {}
+                if do:
+                    lines.append("**Decision outcomes (cumulative, ±5% threshold):**")
+                    lines.append("")
+                    lines.append("| Category | Count |")
+                    lines.append("|---|---|")
+                    label_map = {
+                        "rejections_followed_by_up_move_5pct": "Rejections followed by ≥+5% (revisit-worthy)",
+                        "rejections_followed_by_down_move_5pct": "Rejections followed by ≥-5% (paid off)",
+                        "rejections_neutral": "Rejections within ±5% (neutral)",
+                        "entries_followed_by_up_move_5pct": "Entries followed by ≥+5% (paid off)",
+                        "entries_followed_by_down_move_5pct": "Entries followed by ≥-5% (revisit-worthy)",
+                        "exits_followed_by_continued_up_5pct": "Exits followed by continued ≥+5% (revisit-worthy)",
+                        "exits_followed_by_down_move_5pct": "Exits followed by ≥-5% drop (paid off)",
+                        "high_conviction_optimist_vindicated": "High-conviction Optimist (≥+0.5) vindicated",
+                        "high_conviction_optimist_contradicted": "High-conviction Optimist contradicted",
+                        "high_conviction_pessimist_vindicated": "High-conviction Pessimist (≤-0.5) vindicated",
+                        "high_conviction_pessimist_contradicted": "High-conviction Pessimist contradicted",
+                    }
+                    for k, label in label_map.items():
+                        v = do.get(k)
+                        if v is not None:
+                            lines.append(f"| {label} | {v} |")
+                    if do.get("window_ticks"):
+                        lines.append(f"| _window_ticks_ | {do['window_ticks']} |")
+                    lines.append("")
+
+                # Watch-list notes (not yet candidates)
+                wl = latest_refl.get("notes_for_watchlist") or []
+                if wl:
+                    lines.append(f"**Watch list ({len(wl)} — single-observation notes; need ≥2 to become candidates):**")
+                    lines.append("")
+                    for n in wl[:10]:
+                        sym = n.get("symbol", "?")
+                        obs = (n.get("observation") or "")[:200]
+                        why = (n.get("why_not_yet_a_candidate") or "")[:80]
+                        lines.append(f"- **{sym}**: {obs}  _({why})_")
+                    lines.append("")
 
             # Split validated + candidates into "decisions that paid off" vs "worth revisiting"
             def _categorize(c):
