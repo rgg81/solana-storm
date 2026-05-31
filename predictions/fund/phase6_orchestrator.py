@@ -103,6 +103,12 @@ def persist_reflector_output(reflector_json_path: str | Path,
         lessons_io.append_reflection(row)
         n_conf += 1
 
+    # Keep the lessons.md frontmatter rollup counters in sync with jsonl ground truth.
+    try:
+        lessons_io.refresh_frontmatter_counters()
+    except Exception:
+        pass  # never let a bookkeeping refresh break the persist path
+
     return {"persisted": True, "tick_id": tick_id, "n_candidates": n_cand,
             "n_confirmations": n_conf, "n_watchlist": len(data.get("notes_for_watchlist", []))}
 
@@ -152,6 +158,13 @@ def run(regime_label: str | None = None) -> dict:
     per_sym = risk.get("specialist_consensus_per_symbol", {})
     cur_prices = {t: float(d.get("current_price_usd") or 0) for t, d in per_sym.items()}
     stage_result = stage_phase6.stage(new_tick_id, cur_prices)
+
+    # Refresh frontmatter rollup counters from jsonl ground truth (idempotent).
+    try:
+        from predictions.fund import lessons_io
+        lessons_io.refresh_frontmatter_counters()
+    except Exception:
+        pass
 
     return {
         "tick_id": new_tick_id,

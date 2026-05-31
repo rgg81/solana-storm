@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-05-24T18:59:51Z'
-total_ticks_recorded: 0
+last_updated: '2026-05-31T07:30:53Z'
+total_ticks_recorded: 51
 total_closed_trades_audited: 1
 scoreboard:
   market_analyst_optimist:
@@ -48,7 +48,7 @@ disagreement_outcome:
     n: 0
     avg_return_pct: null
     win_rate: null
-validated_rules_count: 0
+validated_rules_count: 6
 candidate_rules_count: 0
 disconfirmed_rules_count: 0
 ---

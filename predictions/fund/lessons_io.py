@@ -160,6 +160,36 @@ def summary_for_agent_prompt() -> str:
 # ============================================================
 
 REFL_PATH = STATE_DIR / "lessons_reflections.jsonl"
+EQUITY_PATH = STATE_DIR / "equity.jsonl"
+AUDIT_LOG_PATH = STATE_DIR / "closed_trades_audit.jsonl"
+
+
+def refresh_frontmatter_counters() -> dict:
+    """Recompute rollup counters from jsonl ground truth and write to frontmatter.
+
+    Fixes the drift between:
+      - lessons_reflections.jsonl (Reflector writes here) → validated/candidate/rejected counts
+      - equity.jsonl (Phase 0 writes here)              → total_ticks_recorded
+      - closed_trades_audit.jsonl (audit.audit_close)   → total_closed_trades_audited
+
+    Idempotent; safe to call from Phase 6 every tick.
+    """
+    updates: dict = {}
+
+    agg = _aggregate_reflections()
+    updates["validated_rules_count"] = len(agg.get("validated", []))
+    updates["candidate_rules_count"] = len(agg.get("candidates", []))
+    updates["disconfirmed_rules_count"] = len(agg.get("rejected", []))
+
+    if EQUITY_PATH.exists():
+        n_ticks = sum(1 for line in EQUITY_PATH.read_text().splitlines() if line.strip())
+        updates["total_ticks_recorded"] = n_ticks
+
+    if AUDIT_LOG_PATH.exists():
+        n_audited = sum(1 for line in AUDIT_LOG_PATH.read_text().splitlines() if line.strip())
+        updates["total_closed_trades_audited"] = n_audited
+
+    return update_frontmatter(updates)
 
 
 def _load_reflections() -> list[dict]:
