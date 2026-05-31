@@ -217,18 +217,23 @@ def build_report() -> str:
     # --- Section 3: Per-symbol consensus
     lines.append("## 3. Specialist consensus (per symbol)")
     lines.append("")
-    opt_scores = {s["ticker"]: s["score"] for s in optimist.get("scores", [])}
-    pes_scores = {s["ticker"]: s["score"] for s in pessimist.get("scores", [])}
-    se_scores = {s["ticker"]: s["score"] for s in sexpert.get("scores", [])}
+    # Normalize: a specialist may emit score=null for honest no-data. Treat as 0.0
+    # so downstream consensus arithmetic doesn't trip on None.
+    def _score(s):
+        v = s.get("score")
+        return float(v) if v is not None else 0.0
+    opt_scores = {s["ticker"]: _score(s) for s in optimist.get("scores", [])}
+    pes_scores = {s["ticker"]: _score(s) for s in pessimist.get("scores", [])}
+    se_scores = {s["ticker"]: _score(s) for s in sexpert.get("scores", [])}
     opt_reasons = {s["ticker"]: s for s in optimist.get("scores", [])}
     pes_reasons = {s["ticker"]: s for s in pessimist.get("scores", [])}
-    
+
     # Solana Expert split-aware: prefer split if present, fall back to unified
     se_opt_data = _safe_load("/tmp/smaf_solana_expert_optimist.json")
     se_pes_data = _safe_load("/tmp/smaf_solana_expert_pessimist.json")
     if se_opt_data and se_pes_data:
-        se_opt_scores = {s["ticker"]: s["score"] for s in se_opt_data.get("scores", [])}
-        se_pes_scores = {s["ticker"]: s["score"] for s in se_pes_data.get("scores", [])}
+        se_opt_scores = {s["ticker"]: _score(s) for s in se_opt_data.get("scores", [])}
+        se_pes_scores = {s["ticker"]: _score(s) for s in se_pes_data.get("scores", [])}
         has_se_split = True
     else:
         se_opt_scores = se_scores
