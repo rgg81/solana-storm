@@ -84,11 +84,38 @@ For each symbol with specialist_consensus ≥ +0.3 (BUY candidate), output:
 - **take_profit_pct**: typically +2 to +3× the stop distance (asymmetric R:R)
 - **max_size_pct**: max % of equity for this position. Function of conviction × inverse-vol.
 
+## Pass 2.5: Regime-aware probe path (added 2026-06-01, conservatism audit fix)
+
+**Motivation.** The conservatism audit (commit history; 4-lens analysis 2026-06-01) found that in strong_bear + calm_vol the +0.40 effective floor is structurally unreachable (max consensus observed across the full run: ~+0.243). All "rule #3 validated" cases are sampled FROM the defensive streak itself — circular evidence. To break the loop without abandoning discipline, take ONE tightly-capped probe per regime cycle when the team is genuinely lifting toward the floor. The point is to generate **out-of-sample data**, not to chase return.
+
+**Probe is allowed when ALL of these hold:**
+1. Regime is `strong_bear` AND vol bucket is `calm`
+2. No open positions (probe is for cash-only state — never compounds with active risk)
+3. Symbol meets ALL: `consensus ≥ +0.20`, `ma_optimist ≥ +0.45`, no MA-Pes HARD VETO (`ma_pessimist > -0.50`), `onchain_consensus ≥ +0.00`, `combined_uncertainty < 0.55`, no validated reflection-rule HARD VETO
+4. No probe has fired in the prior 4 ticks (read `predictions/fund/state/probe_log.jsonl` for last fired probe's tick_id)
+5. Drawdown halt is NOT active and account is otherwise healthy
+
+**Probe parameters (HARD CAPS — do not exceed):**
+- `max_size_usd`: $125 (1.25% of $10k equity — 1/16th of normal max position)
+- `stop_loss_pct`: -0.08 (worst-case dollar loss ~$10)
+- `take_profit_pct`: +0.15
+- One probe per regime cycle (resets when regime changes from strong_bear OR after 4 ticks)
+
+**Probe output (if you take one):**
+- Add a `regime_probe` field at top level of your output JSON: `{ticker, consensus_at_entry, stop_loss_usd, tp_usd, max_size_usd:125, rationale:"out-of-sample test of strong_bear floor calibration per audit 2026-06-01"}`
+- Also emit it in `new_entry_recommendations[]` so PM can execute
+- DO NOT use a probe to bypass any HARD VETO or the +0.40 floor for full-sized entries. Probes are explicitly carve-outs.
+
+**Audit trail.** The system appends every probe to `predictions/fund/state/probe_log.jsonl` (PM execute layer) for later post-mortem. After 3 probe round-trips, the audit can statistically test whether loosening the floor would have helped.
+
+If no symbol qualifies, do NOT take a probe. The discipline holds.
+
 ## Hard rules
 1. Higher volatility → wider stops (avoid noise stop-outs) AND smaller size (manage $ risk).
 2. Every new position MUST have a defined stop (no "we'll figure it out later" entries).
 3. If stop_loss_pct would imply a stop wider than −15%, REJECT the trade — too risky.
 4. Round-trip fee cost must be < (expected_move_to_TP / 4). If not, reject.
+5. The Pass 2.5 probe path is a **carve-out** for data generation only. It does NOT modify validated rule #3 (do not loosen the +0.40 floor for full-sized entries). Probes are 1.25% size with strict gating; rule #3 remains in force for everything else.
 
 
 ## Performance state (shared across all agents)

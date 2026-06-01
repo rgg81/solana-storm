@@ -40,6 +40,12 @@ TRIG_SELL_CONT_6H_PCT = 5.0   # |delta| threshold for 6h sell-follow-up
 TRIG_ENTRY_6H_PCT = 5.0       # |delta| threshold for 6h entry-validation
 TRIG_FORCE_AFTER_TICKS = 4
 
+# Audit-gate: a rejection only "paid off" if the team plausibly could have entered.
+# Per conservatism audit 2026-06-01: require max consensus in the rejection-to-now
+# window to be within FLOOR_CONTEST_BAND of the regime floor. Otherwise the symbol
+# was never an entry candidate; subsequent downside is luck not validated discipline.
+GOOD_REJECTION_CONTEST_THRESHOLD = 0.35   # = floor (0.40 strong_bear) - 0.05
+
 
 def _append_jsonl(path: Path, row: dict) -> None:
     existing = path.read_text() if path.exists() else ""
@@ -82,6 +88,11 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
             ticks_ago = current_tick_id - prior["tick_id"]
             window = "6h" if ticks_ago == 1 else f"{ticks_ago * 6}h"
             delta_pct = (cur_price / prior_price - 1.0) * 100
+            # Max consensus observed for this symbol from rejection-tick through now —
+            # used to gate "good_rejection" as contested-vs-uncontested (audit gate).
+            window_rows = [r for r in rows if prior["tick_id"] <= r.get("tick_id", 0) <= current_tick_id]
+            cons_values = [float(r.get("consensus") or 0) for r in window_rows]
+            max_consensus_in_window = max(cons_values) if cons_values else float(prior.get("consensus") or 0)
             # Counterfactual P&L: if we had bought at the rejected size_pct (or a default 5%)
             sized_pct = prior.get("risk_mgr_max_size_pct") or 5.0
             # Assume $10k notional account, 5% size = $500
@@ -107,6 +118,7 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
                 "prior_combined_uncertainty": prior.get("combined_uncertainty"),
                 "prior_rm_reason": prior.get("rm_reason"),
                 "prior_regime": prior.get("regime_label"),
+                "max_consensus_in_window": round(max_consensus_in_window, 3),
             })
     return whatifs
 
@@ -122,17 +134,24 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         delta = w.get("delta_pct") or 0
         ticks = w.get("ticks_ago")
 
-        # REJECTIONS — both directions
+        # REJECTIONS — both directions.
+        # good_rejection is gated on max_consensus_in_window >= contest threshold:
+        # if consensus never approached the floor in the window, the symbol wasn't
+        # a real entry candidate and avoiding it isn't a validated discipline win.
+        max_cons = w.get("max_consensus_in_window", w.get("prior_consensus") or 0)
+        contested = max_cons >= GOOD_REJECTION_CONTEST_THRESHOLD
         if tag.startswith("REJECT") and ticks == 1:
             if delta >= TRIG_REJECT_6H_PCT:
                 triggers.append({**w, "trigger_kind": "missed_winner_6h"})
             elif delta <= -TRIG_REJECT_6H_PCT:
-                triggers.append({**w, "trigger_kind": "good_rejection_6h"})
+                kind = "good_rejection_6h" if contested else "uncontested_rejection_down_6h"
+                triggers.append({**w, "trigger_kind": kind})
         elif tag.startswith("REJECT") and ticks == 4:
             if delta >= TRIG_REJECT_24H_PCT:
                 triggers.append({**w, "trigger_kind": "missed_winner_24h"})
             elif delta <= -TRIG_REJECT_24H_PCT:
-                triggers.append({**w, "trigger_kind": "good_rejection_24h"})
+                kind = "good_rejection_24h" if contested else "uncontested_rejection_down_24h"
+                triggers.append({**w, "trigger_kind": kind})
 
         # SELLS — both directions
         elif tag.startswith("SELL_EXECUTED") and ticks == 1:

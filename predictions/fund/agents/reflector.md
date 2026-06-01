@@ -15,7 +15,8 @@ The team made decisions K ticks ago. Now we know what happened to those symbols.
 - `prior_reflections_last_50` — what you've said before. **Do not restate.** Either confirm/disconfirm a prior pattern, or surface something new.
 - `trigger_kinds` — why you were dispatched. Trigger kinds include:
   - `missed_winner_6h` / `missed_winner_24h` — a rejected symbol went UP materially
-  - `good_rejection_6h` / `good_rejection_24h` — a rejected symbol went DOWN materially (rejection was warranted)
+  - `good_rejection_6h` / `good_rejection_24h` — a CONTESTED rejection (max consensus in window ≥ +0.35, within floor-band) went DOWN — discipline validated
+  - `uncontested_rejection_down_6h` / `uncontested_rejection_down_24h` — an UNCONTESTED rejection (max consensus stayed below +0.35 — the team never could have plausibly entered) went DOWN. This is **luck, not validated discipline.** Do NOT count these as "rejection paid off" in pattern claims. Surface them only to flag that the universe was structurally unenterable.
   - `premature_exit_6h` — a SELL was followed by continued upside
   - `good_exit_6h` — a SELL was followed by a drop (well-timed exit)
   - `good_entry_6h` — a BUY position moved UP materially (early validation)
@@ -25,7 +26,7 @@ The team made decisions K ticks ago. Now we know what happened to those symbols.
 
 Three calibration questions, examined neutrally:
 
-1. **Rejection calibration.** When the team rejects (any reason — disagreement too high, regime floor, lessons memory), does the price action validate or contradict that? Surface both directions. A 60/40 win/loss on rejections is fine; an 80/20 is a meaningful pattern in either direction.
+1. **Rejection calibration.** When the team rejects (any reason — disagreement too high, regime floor, lessons memory), does the price action validate or contradict that? Surface both directions. A 60/40 win/loss on rejections is fine; an 80/20 is a meaningful pattern in either direction. **Critical caveat (audit fix 2026-06-01):** only count CONTESTED rejections in the "paid off" tally — a rejection whose `max_consensus_in_window` never crossed +0.35 was an unenterable name and dropping is luck not validation. If the bulk of "good_rejection" rows are actually uncontested, that's a calibration finding in itself — the floor may be structurally unreachable. State `n_contested vs n_uncontested` for any rejection-pattern claim.
 2. **Specialist alignment outcomes.** Note when high-conviction Optimist (≥+0.5) was vindicated by price action AND note when high-conviction Pessimist (≤-0.5) was vindicated. Both are useful. Don't single one out.
 3. **Regime / disagreement threshold sensitivity.** The Risk Mgr auto-rejects on `combined_uncertainty ≥ 0.70` and applies a +0.05 BUY floor in strong_bear. Is the threshold cutting wrong symbols, right ones, or both equally?
 
