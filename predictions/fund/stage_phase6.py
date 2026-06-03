@@ -40,6 +40,13 @@ TRIG_SELL_CONT_6H_PCT = 5.0   # |delta| threshold for 6h sell-follow-up
 TRIG_ENTRY_6H_PCT = 5.0       # |delta| threshold for 6h entry-validation
 TRIG_FORCE_AFTER_TICKS = 4
 
+# Sanity clamp on |delta|: a single-tick move > 500% on a >$50M-mcap token is
+# physically implausible — it indicates corrupted DexScreener / broken venue
+# data, NOT a real move. Drop these from trigger classification so they don't
+# fire spurious missed_winner reflections. Per tick-45 incident 2026-06-03
+# where JUP DexScreener returned $1026 vs plausible $0.21.
+ANOMALY_DELTA_PCT_THRESHOLD = 500.0
+
 # Audit-gate: a rejection only "paid off" if the team plausibly could have entered.
 # Per conservatism audit 2026-06-01: require max consensus in the rejection-to-now
 # window to be within FLOOR_CONTEST_BAND of the regime floor. Otherwise the symbol
@@ -133,6 +140,11 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         tag = (w.get("prior_decision_tag") or "")
         delta = w.get("delta_pct") or 0
         ticks = w.get("ticks_ago")
+
+        # Sanity clamp: implausible single-tick moves are data corruption,
+        # not real signals. Skip them so they don't fire spurious triggers.
+        if abs(delta) > ANOMALY_DELTA_PCT_THRESHOLD:
+            continue
 
         # REJECTIONS — both directions.
         # good_rejection is gated on max_consensus_in_window >= contest threshold:
