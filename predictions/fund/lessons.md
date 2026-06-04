@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-06-04T08:01:32Z'
-total_ticks_recorded: 83
+last_updated: '2026-06-04T14:25:10Z'
+total_ticks_recorded: 85
 total_closed_trades_audited: 1
 scoreboard:
   market_analyst_optimist:
@@ -50,7 +50,7 @@ disagreement_outcome:
     win_rate: null
 validated_rules_count: 13
 candidate_rules_count: 1
-disconfirmed_rules_count: 0
+disconfirmed_rules_count: 1
 ---
 
 # SMAF — Rolling Lessons & Specialist Memory
