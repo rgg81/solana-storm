@@ -40,12 +40,21 @@ TRIG_SELL_CONT_6H_PCT = 5.0   # |delta| threshold for 6h sell-follow-up
 TRIG_ENTRY_6H_PCT = 5.0       # |delta| threshold for 6h entry-validation
 TRIG_FORCE_AFTER_TICKS = 4
 
-# Sanity clamp on |delta|: a single-tick move > 500% on a >$50M-mcap token is
-# physically implausible — it indicates corrupted DexScreener / broken venue
-# data, NOT a real move. Drop these from trigger classification so they don't
-# fire spurious missed_winner reflections. Per tick-45 incident 2026-06-03
-# where JUP DexScreener returned $1026 vs plausible $0.21.
-ANOMALY_DELTA_PCT_THRESHOLD = 500.0
+# Sanity clamps on delta_pct: physically implausible single-tick moves indicate
+# corrupted DexScreener / wrong-pool quotes, NOT a real move. Drop them from
+# trigger classification so they don't fire spurious reflector triggers.
+#
+# - Positive cap 500%: catches the tick-45 JUP case where the prior corrupt
+#   $1026 vs current $0.21 produces a +5000% delta when viewed in reverse.
+# - Negative cap 95%: catches the tick-92 TRUMP case where the prior corrupt
+#   $7946 (wrong DexScreener pool) vs current $1.57 produces a -99.98% delta.
+#   Real $200M+ mcap tokens don't drop 95% in a single 6h-24h window; if a
+#   memecoin legitimately rugs that hard within one tick we'd want to know, but
+#   the false-positive rate of DexScreener pool-swap artifacts dominates.
+ANOMALY_DELTA_PCT_POS_THRESHOLD = 500.0
+ANOMALY_DELTA_PCT_NEG_THRESHOLD = -95.0
+# Back-compat alias for any external callers / older imports
+ANOMALY_DELTA_PCT_THRESHOLD = ANOMALY_DELTA_PCT_POS_THRESHOLD
 
 # Audit-gate: a rejection only "paid off" if the team plausibly could have entered.
 # Per conservatism audit 2026-06-01: require max consensus in the rejection-to-now
@@ -141,9 +150,23 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         delta = w.get("delta_pct") or 0
         ticks = w.get("ticks_ago")
 
-        # Sanity clamp: implausible single-tick moves are data corruption,
+        # Sanity clamps: implausible single-tick moves are data corruption,
         # not real signals. Skip them so they don't fire spurious triggers.
-        if abs(delta) > ANOMALY_DELTA_PCT_THRESHOLD:
+        # Symmetric (positive >500% AND negative <-95%) — see ANOMALY_*_THRESHOLD.
+        if delta > ANOMALY_DELTA_PCT_POS_THRESHOLD or delta < ANOMALY_DELTA_PCT_NEG_THRESHOLD:
+            try:
+                from predictions.fund import bugs
+                bugs.log_warning(
+                    "phase6.anomaly_delta_clamp",
+                    f"{w['symbol']}: delta {delta:.1f}% in {w['window']} clamped — likely DexScreener pool error",
+                    context={"symbol": w["symbol"], "window": w["window"],
+                             "delta_pct": delta, "prior_price_usd": w.get("prior_price_usd"),
+                             "current_price_usd": w.get("current_price_usd"),
+                             "prior_tick_id": w.get("prior_tick_id"),
+                             "current_tick_id": w.get("current_tick_id")},
+                )
+            except Exception:
+                pass
             continue
 
         # REJECTIONS — both directions.
