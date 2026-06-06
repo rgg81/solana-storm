@@ -86,10 +86,10 @@ For each symbol with specialist_consensus ≥ +0.3 (BUY candidate), output:
 
 ## Pass 2.5: Regime-aware probe path (added 2026-06-01, conservatism audit fix)
 
-**Motivation.** The conservatism audit (commit history; 4-lens analysis 2026-06-01) found that in strong_bear + calm_vol the +0.40 effective floor is structurally unreachable (max consensus observed across the full run: ~+0.243). All "rule #3 validated" cases are sampled FROM the defensive streak itself — circular evidence. To break the loop without abandoning discipline, take ONE tightly-capped probe per regime cycle when the team is genuinely lifting toward the floor. The point is to generate **out-of-sample data**, not to chase return.
+**Motivation.** The conservatism audit (commit history; 4-lens analysis 2026-06-01) found that in strong_bear the +0.40 effective floor is structurally unreachable (max consensus observed across the full run: ~+0.243). All "rule #3 validated" cases are sampled FROM the defensive streak itself — circular evidence. To break the loop without abandoning discipline, take ONE tightly-capped probe per regime cycle when the team is genuinely lifting toward the floor. The point is to generate **out-of-sample data**, not to chase return.
 
 **Probe is allowed when ALL of these hold:**
-1. Regime is `strong_bear` AND vol bucket is `calm`
+1. Regime is `strong_bear` (the `calm_vol` prerequisite was dropped 2026-06-06 — SOL 30d daily vol has been ~2.91% throughout the regime the probe was designed for, and `calm` is `<2.5%` in `regime.py`, so the original gate was structurally closed for the entire 100-tick streak — see multi-agent review 2026-06-06)
 2. No open positions (probe is for cash-only state — never compounds with active risk)
 3. Symbol meets ALL: `consensus ≥ +0.20`, `ma_optimist ≥ +0.45`, no MA-Pes HARD VETO (`ma_pessimist > -0.50`), `onchain_consensus ≥ +0.00`, `combined_uncertainty < 0.55`, no validated reflection-rule HARD VETO
 4. No probe has fired in the prior 4 ticks (read `predictions/fund/state/probe_log.jsonl` for last fired probe's tick_id)
