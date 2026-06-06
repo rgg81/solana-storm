@@ -39,3 +39,18 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace
+
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: install pytest
+        run: pip install pytest requests
+
+      - name: pytest predictions/fund/tests
+        run: pytest predictions/fund/tests/ -q
