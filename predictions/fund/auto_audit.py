@@ -86,14 +86,37 @@ def check_audit_coverage() -> dict:
 
 
 def check_no_critical_unresolved() -> dict:
+    """Count unresolved CRITICAL bugs EXCLUDING phase7_audit.* self-references
+    (otherwise the check logs a CRITICAL bug that the next tick then counts,
+    creating a self-perpetuating loop)."""
     try:
         from predictions.fund import bugs
-        n = bugs.unresolved_count(min_severity="CRITICAL")
+        if not bugs.BUGS_PATH.exists():
+            return {"passed": True, "msg": "no bugs file"}
+        n = 0
+        sample = []
+        for line in bugs.BUGS_PATH.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            if ev.get("resolved"):
+                continue
+            if ev.get("severity") != "CRITICAL":
+                continue
+            comp = ev.get("component") or ""
+            if comp.startswith("phase7_audit."):
+                continue  # self-reference; skip
+            n += 1
+            if len(sample) < 5:
+                sample.append(f"{comp}: {(ev.get('message') or '')[:80]}")
     except Exception as e:
         return {"passed": True, "msg": f"check skipped: {e}"}
     if n > 0:
         return {"passed": False, "severity": "CRITICAL", "msg": f"{n} unresolved CRITICAL bugs",
-                "context": {"unresolved_critical_count": n}}
+                "context": {"unresolved_critical_count": n, "sample": sample}}
     return {"passed": True, "msg": "ok"}
 
 
