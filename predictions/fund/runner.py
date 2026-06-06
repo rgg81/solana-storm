@@ -215,13 +215,16 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
             try:
                 from predictions.fund import audit as audit_mod
                 spec = per_sym.get(ticker, {}) if per_sym else {}
+                deposit = float(state.get("deposit_usd") or 0) or 1.0
                 snap = audit_mod.snapshot_entry_consensus(
                     ticker=ticker,
-                    opt_score=spec.get("ma_optimist_score", 0.0),
-                    pes_score=spec.get("ma_pessimist_score", 0.0),
-                    se_score=spec.get("se_score", 0.0),
-                    risk_mgr_size_pct=float(trade.get("usd_amount", 0) / state.get("deposit_usd", 1) * 100),
-                    disagreement=spec.get("disagreement", 0.0),
+                    ma_opt_score=float(spec.get("ma_optimist_score") or 0.0),
+                    ma_pes_score=float(spec.get("ma_pessimist_score") or 0.0),
+                    se_opt_score=float(spec.get("se_optimist_score") or 0.0),
+                    se_pes_score=float(spec.get("se_pessimist_score") or 0.0),
+                    risk_mgr_size_pct=float(trade.get("usd_amount", 0)) / deposit * 100,
+                    market_disagreement=float(spec.get("market_disagreement") or 0.0),
+                    onchain_disagreement=float(spec.get("onchain_disagreement") or 0.0),
                 )
                 state["holdings"][ticker]["entry_consensus"] = snap
             except Exception as e:
