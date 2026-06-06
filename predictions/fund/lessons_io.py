@@ -107,7 +107,18 @@ def summary_for_agent_prompt() -> str:
     lines.append(f"  Audited closed trades: {closed}")
     
     sb = fm.get("scoreboard") or {}
-    for spec_name in ("market_analyst_optimist", "market_analyst_pessimist", "solana_expert"):
+    # 4-specialist keys + legacy 'solana_expert' fallback when split keys absent.
+    for spec_name in (
+        "market_analyst_optimist",
+        "market_analyst_pessimist",
+        "solana_expert_optimist",
+        "solana_expert_pessimist",
+        "solana_expert",
+    ):
+        if spec_name == "solana_expert" and (
+            sb.get("solana_expert_optimist") or sb.get("solana_expert_pessimist")
+        ):
+            continue
         s = sb.get(spec_name, {})
         ct = s.get("closed_trades_scored", 0)
         cc = s.get("correct_directional_calls", 0)
@@ -190,6 +201,78 @@ def refresh_frontmatter_counters() -> dict:
         updates["total_closed_trades_audited"] = n_audited
 
     return update_frontmatter(updates)
+
+
+_BODY_MARKER_VALIDATED = "## Validated lessons"
+_BODY_MARKER_CANDIDATE = "## Candidate lessons"
+_BODY_MARKER_DISCONFIRMED = "## Disconfirmed lessons"
+_BODY_AUTOGEN_BEGIN = "<!-- LESSONS_AUTOGEN_BEGIN — managed by lessons_io.refresh_body -->"
+_BODY_AUTOGEN_END = "<!-- LESSONS_AUTOGEN_END -->"
+
+
+def _render_rules_section(label: str, rules: list[dict]) -> list[str]:
+    if not rules:
+        return [f"### {label}", "", "_(none)_", ""]
+    out = [f"### {label}", ""]
+    for r in sorted(rules, key=lambda x: -x.get("supporting_count", 0)):
+        kind = r.get("kind", "?")
+        pattern = (r.get("pattern") or r.get("candidate_lesson") or "")[:280]
+        n = r.get("supporting_count", 0)
+        d = r.get("disconfirming_count", 0)
+        out.append(f"- **[{kind}]** {pattern}  _(supports={n}, disconfirms={d})_")
+    out.append("")
+    return out
+
+
+def refresh_body() -> dict:
+    """Render aggregated reflection rules into the lessons.md body.
+
+    Wires _aggregate_reflections() output into Validated/Candidate/Disconfirmed
+    sections wrapped in an autogen block so the rest of the body (header,
+    notes, manual sections) is preserved across runs.
+
+    Historically the body remained at '_(none yet — cold start)_' even after
+    the frontmatter showed 16+ validated rules (multi-agent review 2026-06-06).
+    """
+    if not LESSONS_PATH.exists():
+        return {"updated": False, "reason": "lessons.md missing"}
+    agg = _aggregate_reflections()
+    if agg.get("total_reflection_rows", 0) == 0:
+        return {"updated": False, "reason": "no reflections yet"}
+
+    rendered: list[str] = [_BODY_AUTOGEN_BEGIN, ""]
+    rendered += _render_rules_section("Validated (promoted)", agg.get("validated", []))
+    rendered += _render_rules_section("Candidate (awaiting promotion)", agg.get("candidates", []))
+    rendered += _render_rules_section("Disconfirmed (rejected anti-patterns)", agg.get("rejected", []))
+    rendered.append(_BODY_AUTOGEN_END)
+    rendered_block = "\n".join(rendered)
+
+    body = load_body()
+    # Replace an existing autogen block in-place, else inject after the body
+    # header (before the cold-start placeholder sections).
+    if _BODY_AUTOGEN_BEGIN in body and _BODY_AUTOGEN_END in body:
+        before, _, rest = body.partition(_BODY_AUTOGEN_BEGIN)
+        _, _, after = rest.partition(_BODY_AUTOGEN_END)
+        new_body = before + rendered_block + after
+    else:
+        # Strip the historical cold-start placeholders so the autogen block is
+        # the single source of truth for the rule list.
+        cleaned = re.sub(
+            r"## Validated lessons.*?(?=\n##|\Z)|## Candidate lessons.*?(?=\n##|\Z)|## Disconfirmed lessons.*?(?=\n##|\Z)",
+            "",
+            body,
+            flags=re.DOTALL,
+        )
+        sep = "\n\n" if not cleaned.endswith("\n\n") else ""
+        new_body = cleaned.rstrip() + sep + "\n" + rendered_block + "\n"
+
+    write(load_frontmatter(), new_body)
+    return {
+        "updated": True,
+        "n_validated": len(agg.get("validated", [])),
+        "n_candidates": len(agg.get("candidates", [])),
+        "n_rejected": len(agg.get("rejected", [])),
+    }
 
 
 def _load_reflections() -> list[dict]:

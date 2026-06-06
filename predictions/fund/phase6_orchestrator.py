@@ -109,6 +109,14 @@ def persist_reflector_output(reflector_json_path: str | Path,
     except Exception:
         pass  # never let a bookkeeping refresh break the persist path
 
+    # Render aggregated rules into the lessons.md body so the file's stated
+    # purpose ("persistent memory all agents read") is honored — historically
+    # the body stayed at cold-start placeholder despite a populated frontmatter.
+    try:
+        lessons_io.refresh_body()
+    except Exception:
+        pass
+
     return {"persisted": True, "tick_id": tick_id, "n_candidates": n_cand,
             "n_confirmations": n_conf, "n_watchlist": len(data.get("notes_for_watchlist", []))}
 
@@ -159,10 +167,11 @@ def run(regime_label: str | None = None) -> dict:
     cur_prices = {t: float(d.get("current_price_usd") or 0) for t, d in per_sym.items()}
     stage_result = stage_phase6.stage(new_tick_id, cur_prices)
 
-    # Refresh frontmatter rollup counters from jsonl ground truth (idempotent).
+    # Refresh frontmatter rollup counters + body rules from jsonl ground truth.
     try:
         from predictions.fund import lessons_io
         lessons_io.refresh_frontmatter_counters()
+        lessons_io.refresh_body()
     except Exception:
         pass
 

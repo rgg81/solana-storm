@@ -30,6 +30,28 @@ TMP_PATHS = {
 }
 
 
+_SOL_VOL_RE = __import__("re").compile(r"SOL 30d vol:\s*([\d.]+)%", __import__("re").IGNORECASE)
+
+
+def _sol_30d_vol_from_regime(regime_status: str) -> float | None:
+    """Parse the SOL 30d daily vol percentage from the regime_status text block.
+
+    The block is the canonical source used in the agent prompt. Returns None
+    when the value is unreadable (caller should leave the field as None rather
+    than substitute 0 — zero would confuse downstream vol-scaled logic with a
+    real reading).
+    """
+    if not isinstance(regime_status, str):
+        return None
+    m = _SOL_VOL_RE.search(regime_status)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
 def _scores_to_dict(out: dict) -> dict:
     """Normalize a specialist's `scores` (list-of-dicts OR dict) to {ticker: entry}."""
     s = out.get("scores", [])
@@ -113,7 +135,13 @@ def stage() -> dict:
         dex = (per_sym_p2.get(t, {}) or {}).get("dexscreener", {}) or {}
         cur_price = float(dex.get("price_usd") or 0)
         liq = float(dex.get("liq_usd") or 0)
-        vol_30d = (per_sym_p2.get(t, {}) or {}).get("indicators", {}).get("vol_30d_daily_pct", 0)
+        vol_30d = (per_sym_p2.get(t, {}) or {}).get("indicators", {}).get("vol_30d_daily_pct")
+        # Fallback to SOL's 30d vol from regime_status when per-symbol indicator
+        # is missing (covers infra/AI symbols whose per-symbol vol isn't computed).
+        # Pre-fix this was a literal 0 for every symbol including SOL — review
+        # 2026-06-06 flagged the structured field never matched the regime string.
+        if vol_30d in (None, 0, 0.0):
+            vol_30d = _sol_30d_vol_from_regime(p2.get("regime_status", ""))
 
         try:
             est = fees_model.estimate(500.0, liq)

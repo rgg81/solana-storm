@@ -216,6 +216,11 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
                 from predictions.fund import audit as audit_mod
                 spec = per_sym.get(ticker, {}) if per_sym else {}
                 deposit = float(state.get("deposit_usd") or 0) or 1.0
+                # Pull entry vol from the per-symbol risk input (populated by
+                # stage_phase3 from regime detector / per-symbol indicators).
+                vol_pct = spec.get("30d_daily_vol_pct")
+                if vol_pct in (None, 0, 0.0):
+                    vol_pct = None  # explicit "unknown" rather than zero
                 snap = audit_mod.snapshot_entry_consensus(
                     ticker=ticker,
                     ma_opt_score=float(spec.get("ma_optimist_score") or 0.0),
@@ -225,6 +230,7 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
                     risk_mgr_size_pct=float(trade.get("usd_amount", 0)) / deposit * 100,
                     market_disagreement=float(spec.get("market_disagreement") or 0.0),
                     onchain_disagreement=float(spec.get("onchain_disagreement") or 0.0),
+                    vol_30d_daily_pct=(float(vol_pct) if vol_pct is not None else None),
                 )
                 state["holdings"][ticker]["entry_consensus"] = snap
             except Exception as e:

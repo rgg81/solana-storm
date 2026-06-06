@@ -23,10 +23,14 @@ def snapshot_entry_consensus(ticker: str, ma_opt_score: float, ma_pes_score: flo
                               se_opt_score: float, se_pes_score: float,
                               risk_mgr_size_pct: float,
                               market_disagreement: float,
-                              onchain_disagreement: float) -> dict:
+                              onchain_disagreement: float,
+                              vol_30d_daily_pct: float | None = None) -> dict:
     """Build the consensus snapshot dict (4-specialist version).
-    
-    Stored in position's `entry_consensus` field for audit-on-close.
+
+    Stored in position's `entry_consensus` field for audit-on-close. vol_30d_daily_pct
+    is the symbol's 30-day daily volatility at entry — used by audit_close to feed
+    risk_calibration.update_stop_calibration with the real entry vol (was a 0.05
+    placeholder before 2026-06-06; stop multiplier auto-tuning was crippled).
     """
     return {
         "snapshot_unix": int(time.time()),
@@ -39,6 +43,7 @@ def snapshot_entry_consensus(ticker: str, ma_opt_score: float, ma_pes_score: flo
         "onchain_disagreement": onchain_disagreement,
         "combined_uncertainty": max(market_disagreement, onchain_disagreement),
         "risk_mgr_max_size_pct": risk_mgr_size_pct,
+        "vol_30d_daily_pct": vol_30d_daily_pct,
     }
 
 
@@ -209,11 +214,17 @@ def audit_close(ticker: str, entry_consensus: dict, realized_pnl_usd: float,
         stop_triggered = exit_reason in ("stop_loss_verified", "stop_loss")
         # Need vol_30d at entry — proxy: use realized_pct magnitude as a noise proxy
         # (better: store entry vol in entry_consensus; for now use cost-basis-derived approximation)
+        # vol_30d_daily_pct comes from the entry-time snapshot now (was a 0.05
+        # literal placeholder pre-2026-06-06 — stop auto-tuning was crippled).
+        # Fall back to 0.05 ONLY when the entry pre-dates the propagation.
+        entry_vol = entry_consensus.get("vol_30d_daily_pct")
+        if entry_vol is None:
+            entry_vol = 0.05
         risk_calibration.update_stop_calibration(
             was_stop_triggered=stop_triggered,
             was_winner=was_winner,
             realized_pct=realized_pct,
-            vol_30d=0.05,  # placeholder; could store at entry for precision
+            vol_30d=float(entry_vol),
         )
         # Disagreement penalty recalibration (uses bucket data from lessons.md)
         risk_calibration.update_disagreement_calibration()

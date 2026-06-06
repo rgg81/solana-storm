@@ -341,14 +341,26 @@ def build_report() -> str:
                 lines.append(f"| {t} | {anc_str} | {opt_s_str} | {pes_s_str} | {anom_str} |")
             lines.append("")
         
-        # Top BUY candidates + top AVOIDs with reasoning
-        consensus_sorted = sorted(universe, 
-                                    key=lambda t: -((opt_scores.get(t,0)+pes_scores.get(t,opt_scores.get(t,0))+se_scores.get(t,0))/3))
+        # Top BUY candidates + top AVOIDs with reasoning.
+        # 4-way consensus when SE is split; legacy 3-way otherwise. Historically
+        # this block computed 3-way even with split SE — inconsistent with the
+        # per-symbol table above and with what the Risk Manager actually sees
+        # (multi-agent review 2026-06-06).
+        def _row_consensus(t: str) -> float:
+            opt = opt_scores.get(t, 0)
+            pes = pes_scores.get(t, opt)
+            if has_se_split:
+                seo = se_opt_scores.get(t, 0)
+                sep = se_pes_scores.get(t, seo)
+                return (opt + pes + seo + sep) / 4
+            return (opt + pes + se_scores.get(t, 0)) / 3
+
+        consensus_sorted = sorted(universe, key=lambda t: -_row_consensus(t))
         lines.append("### Top BUY candidates (consensus ≥ +0.2)")
         lines.append("")
         any_buy = False
         for t in consensus_sorted[:6]:
-            c = (opt_scores.get(t,0)+pes_scores.get(t,opt_scores.get(t,0))+se_scores.get(t,0))/3
+            c = _row_consensus(t)
             if c < 0.2: continue
             any_buy = True
             opt_r = opt_reasons.get(t, {})
@@ -464,8 +476,22 @@ def build_report() -> str:
             lines.append("")
             lines.append("| Specialist | Closed trades | Correct calls | Avg score on winners | Avg score on losers | Flag |")
             lines.append("|---|---|---|---|---|---|")
-            for spec_name in ("market_analyst_optimist", "market_analyst_pessimist", "solana_expert"):
+            # 4-specialist keys (audit.py writes solana_expert_optimist /
+            # solana_expert_pessimist). 'solana_expert' is a legacy unified
+            # key kept for back-compat when the split keys are missing.
+            for spec_name in (
+                "market_analyst_optimist",
+                "market_analyst_pessimist",
+                "solana_expert_optimist",
+                "solana_expert_pessimist",
+                "solana_expert",  # legacy fallback
+            ):
                 s = sb.get(spec_name, {})
+                # Skip legacy key if either split key is present (avoid double-count).
+                if spec_name == "solana_expert" and (
+                    sb.get("solana_expert_optimist") or sb.get("solana_expert_pessimist")
+                ):
+                    continue
                 ct = s.get("closed_trades_scored", 0)
                 cc = s.get("correct_directional_calls", 0)
                 rate = f"{cc}/{ct} ({cc/ct*100:.0f}%)" if ct > 0 else "n/a"
