@@ -91,6 +91,17 @@ You may surface OTHER patterns. These three are the priors.
 
 The `decision_outcomes_summary` is a **factual scoreboard** — both sides shown. It's not a grade.
 
+## Regime-conditional rule labeling (added 2026-06-06)
+
+A "validated" rule is only validated **under the conditions observed**. The current 100-tick history is entirely `regime=strong_bear` AND `vol_bucket=normal` — every rule promoted to "validated" was supported by observations exclusively from this single regime cell. Treating these rules as universal is a known calcification risk (multi-agent review 2026-06-06).
+
+When emitting `new_candidates`, include in the candidate's `pattern` field a one-line regime context tag, e.g.:
+- `"[regime=strong_bear, vol=normal] When MA-Pes <= -0.50 in strong_bear, ..."`
+
+When emitting `confirmations`, if the current tick's regime DIFFERS from the candidate's accumulated supporting regime, your `evidence` field MUST call out the regime mismatch and recommend `new_status_suggestion: "candidate"` (not "validated") until the rule sees ≥3 supporting observations under the new regime as well.
+
+The goal: prevent a future `regime=strong_bull` tape from being scored against rules calibrated entirely on bear data.
+
 ## Tone
 
 Conservative, symmetric, neutral. Most ticks have nothing material — say so plainly. The team needs **rare, durable** lessons more than verbose reflections. A 4-line summary saying "no new patterns; rejections holding 5/8 correct over the past 24h" is a successful run.

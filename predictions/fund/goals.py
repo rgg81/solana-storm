@@ -26,15 +26,76 @@ MATURITY = {
 }
 
 
+_EQUITY_PATH = Path(__file__).resolve().parent / "state" / "equity.jsonl"
+
+
 def _days_running() -> float:
     """Compute days since account creation from equity.jsonl first entry."""
-    eq = Path(__file__).resolve().parent / "state" / "equity.jsonl"
-    if not eq.exists(): return 0.0
+    if not _EQUITY_PATH.exists(): return 0.0
     try:
-        first = json.loads(eq.read_text().splitlines()[0])
+        first = json.loads(_EQUITY_PATH.read_text().splitlines()[0])
         return max((time.time() - first["timestamp"]) / 86400, 0.0)
     except Exception:
         return 0.0
+
+
+def _rolling_runrate_pct(window_days: float) -> float | None:
+    """Monthly run-rate computed over the trailing window_days of equity.jsonl.
+
+    Returns None if there are fewer than 2 equity rows inside the window.
+    Used by format_for_agent_prompt to expose a 7d run-rate alongside the
+    lifetime extrapolation — the lifetime number was hiding 11+ days of flat
+    equity behind a single tick-1 winner (multi-agent review 2026-06-06).
+    """
+    if not _EQUITY_PATH.exists():
+        return None
+    cutoff = time.time() - window_days * 86400
+    rows = []
+    for line in _EQUITY_PATH.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line)
+            if r.get("timestamp", 0) >= cutoff:
+                rows.append(r)
+        except Exception:
+            pass
+    if len(rows) < 2:
+        return None
+    first_eq = float(rows[0].get("equity_usd") or 0)
+    last_eq = float(rows[-1].get("equity_usd") or 0)
+    if first_eq <= 0:
+        return None
+    window_return = (last_eq / first_eq - 1.0) * 100
+    span_days = max((rows[-1]["timestamp"] - rows[0]["timestamp"]) / 86400, 0.01)
+    return round((window_return / span_days) * 30, 3)
+
+
+def _consecutive_below_floor_ticks() -> int:
+    """Count trailing ticks where the per-tick equity change kept the realized
+    return below floor. Approximation: count trailing equity rows whose
+    equity is exactly equal to the one before (flat) — captures the all-cash
+    paralysis pattern. Returns 0 if equity.jsonl is empty/missing.
+    """
+    if not _EQUITY_PATH.exists():
+        return 0
+    rows = [json.loads(l) for l in _EQUITY_PATH.read_text().splitlines() if l.strip()]
+    if len(rows) < 2:
+        return 0
+    count = 0
+    last = None
+    for r in reversed(rows):
+        eq = float(r.get("equity_usd") or 0)
+        if last is None:
+            last = eq
+            count = 1
+            continue
+        # Tolerance: 1 cent
+        if abs(eq - last) < 0.01:
+            count += 1
+        else:
+            break
+    return count
 
 
 def compute_status() -> dict:
@@ -91,6 +152,9 @@ def compute_status() -> dict:
     elif current_dd <= -5:
         dd_warning = "DD elevated"
     
+    rolling_7d = _rolling_runrate_pct(window_days=7.0)
+    consecutive_flat = _consecutive_below_floor_ticks()
+
     return {
         "monthly_target_pct": MONTHLY_RETURN_TARGET_PCT,
         "monthly_floor_pct": MONTHLY_RETURN_FLOOR_PCT,
@@ -102,6 +166,8 @@ def compute_status() -> dict:
         "days_running": round(days, 2),
         "total_return_pct": round(total_return, 2),
         "monthly_runrate_pct": round(monthly_runrate_pct, 2) if monthly_runrate_pct is not None else None,
+        "rolling_7d_runrate_pct": rolling_7d,
+        "consecutive_flat_ticks": consecutive_flat,
         "current_sharpe": round(sharpe, 2),
         "current_max_dd_pct": round(max_dd, 2),
         "current_dd_pct": round(current_dd, 2),
@@ -128,14 +194,42 @@ def format_for_agent_prompt() -> str:
     lines.append(f"CURRENT PROGRESS ({s['maturity_bucket']}, {s['days_running']}d running):")
     lines.append(f"  Total return: {s['total_return_pct']:+.2f}%")
     if s.get("monthly_runrate_pct") is not None:
-        lines.append(f"  Monthly run-rate: {s['monthly_runrate_pct']:+.2f}% — status: **{s['status']}**")
+        lines.append(f"  Monthly run-rate (lifetime): {s['monthly_runrate_pct']:+.2f}% — status: **{s['status']}**")
+    # 7d-rolling run-rate exposes when the lifetime extrapolation is hiding a
+    # long flat streak. Multi-agent review 2026-06-06: lifetime decay was
+    # masquerading as "selective aggression" while the actual 7d was exactly 0%.
+    if s.get("rolling_7d_runrate_pct") is not None:
+        lines.append(f"  Monthly run-rate (7d rolling): {s['rolling_7d_runrate_pct']:+.2f}%")
+    if s.get("consecutive_flat_ticks", 0) >= 5:
+        lines.append(
+            f"  ⚠ {s['consecutive_flat_ticks']} consecutive flat ticks — capital preservation "
+            f"is the BASELINE not the GOAL; surface cost of inaction explicitly in your summary."
+        )
     lines.append(f"  Current DD: {s['current_dd_pct']:.2f}% {s['dd_warning']}")
-    lines.append(f"  Sharpe: {s['current_sharpe']:.2f}  •  Closed trades: {s['closed_trades']}  •  Hit-rate: {s['hit_rate_pct']}%  •  PF: {s['profit_factor']}")
+    # Sharpe is gated when deployment fraction is too low to be meaningful.
+    if _sharpe_is_meaningful():
+        lines.append(f"  Sharpe: {s['current_sharpe']:.2f}  •  Closed trades: {s['closed_trades']}  •  Hit-rate: {s['hit_rate_pct']}%  •  PF: {s['profit_factor']}")
+    else:
+        lines.append(f"  Sharpe: n/a (insufficient deployment)  •  Closed trades: {s['closed_trades']}  •  Hit-rate: {s['hit_rate_pct']}%  •  PF: {s['profit_factor']}")
     lines.append("")
     lines.append(f"POSTURE RECOMMENDATION: {s['posture_recommendation']}")
     if s["maturity_bucket"] == "cold_start":
         lines.append("  (NOTE: sample is too small to judge; treat target/floor as direction, not verdict)")
     return "\n".join(lines)
+
+
+def _sharpe_is_meaningful(min_deployed_fraction: float = 0.30) -> bool:
+    """Sharpe over 85 zero-return cash days + 2 trades is mechanically
+    inflated and was being cited as evidence of discipline. Suppress display
+    until at least min_deployed_fraction of ticks have non-zero deployment.
+    """
+    if not _EQUITY_PATH.exists():
+        return False
+    rows = [json.loads(l) for l in _EQUITY_PATH.read_text().splitlines() if l.strip()]
+    if len(rows) < 10:
+        return False  # too few ticks to judge
+    deployed = sum(1 for r in rows if float(r.get("deployed_pct") or 0) > 0)
+    return (deployed / len(rows)) >= min_deployed_fraction
 
 
 if __name__ == "__main__":

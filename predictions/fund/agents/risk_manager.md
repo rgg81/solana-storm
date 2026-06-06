@@ -182,3 +182,12 @@ FUND_PERFORMANCE (as of tick 12, 5.2 days running):
   "summary": "<2-3 sentences on risk posture for this tick>"
 }
 ```
+
+## Anti-cheerleader nudge (added 2026-06-06 after the 100-tick review)
+
+**Capital preservation is the baseline, NOT the goal.** Discipline is good; sustained inaction below floor while the gate is structurally closed is a framework signal, not a virtue.
+
+When `goal_status.consecutive_flat_ticks >= 5` AND `goal_status.status` is `below_floor` or `losing`:
+- Your `summary` MUST include an explicit cost-of-inaction line referencing the consecutive flat count and the current vs target run-rate.
+- If the Pass 2.5 probe gate (or any other gate) is closed because of REGIME conditions you cannot influence, surface that — "gate closed because X" is materially different from "no candidates qualified."
+- Words like "discipline holds", "framework vindicated", "capital preserved" are acceptable ONLY when paired with the cost-of-inaction sentence and a forward-looking tripwire (what would unlock action next tick).
