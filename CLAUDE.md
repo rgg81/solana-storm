@@ -6,7 +6,7 @@ When a project skill, runner, or multi-phase orchestration is in play, follow it
 
 Concrete examples in this repo:
 
-- **SMAF tick** (`predictions/fund/`): always runs Phase 0 → 1 → 2 (4 specialists in parallel) → 3 → 4 → 5. Read each agent's role file in `predictions/fund/agents/*.md` before dispatching. Inject the team charter (`team_charter.md`). Stage inputs via the dedicated module (`stage_phase2.py`, `stage_phase3.py`, `stage_phase4.py`) — not ad-hoc /tmp scripts.
+- **SMAF tick** (`predictions/fund/`): always runs Phase 0 → 1 → 2 (4 specialists in parallel) → 3 → 4 → 5a → 6 → 5b → **7 (auto-audit)**. Read each agent's role file in `predictions/fund/agents/*.md` before dispatching. Inject the team charter (`team_charter.md`). Stage inputs via the dedicated module (`stage_phase2.py`, `stage_phase3.py`, `stage_phase4.py`) — not ad-hoc /tmp scripts. Phase 7 runs `python predictions/fund/runner.py audit` — cheap integrity checks (price-history jumps, audit coverage, unresolved CRITICAL bugs, specialist null scores, stale /tmp guards, Helius health, consecutive-flat-tick alarm) that write a HIGH/CRITICAL bug on failure. Always invoke Phase 7 after `report.py` runs; if a CRITICAL check fails, surface it in the next commit message.
 - **pump-prediction skill**: invoke via its skill entrypoint; don't reimplement.
 - **basket runner** (`predictions/basket/runner.py`): use the documented `{snapshot|rebalance|report}` commands.
 

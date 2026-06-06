@@ -351,11 +351,35 @@ def cmd_mark() -> int:
     return 0
 
 
+def cmd_audit() -> int:
+    """Phase 7 — inline auto-audit. Cheap integrity checks at end of every tick.
+
+    Runs the suite from predictions.fund.auto_audit and prints a one-line
+    summary. Failed checks ALSO write a bug to bugs.jsonl so ops-health surfaces
+    them. Exit code 0 unless a CRITICAL check failed (then 1 — the runner
+    chain can fail-fast on that)."""
+    from predictions.fund import auto_audit
+    summary = auto_audit.run()
+    n_pass = summary["passed"]
+    n_fail = summary["failed"]
+    print(f"=== Phase 7: auto-audit ===")
+    print(f"  {n_pass} passed, {n_fail} failed")
+    if n_fail:
+        for r in summary["results"]:
+            if not r.get("passed"):
+                sev = r.get("severity", "MEDIUM")
+                print(f"  ⚠ [{sev}] {r['check']}: {r.get('msg', '?')}")
+    critical_failures = [r for r in summary["results"]
+                         if not r.get("passed") and r.get("severity") == "CRITICAL"]
+    return 1 if critical_failures else 0
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("cmd", choices=["prepare", "status", "mark"])
+    p.add_argument("cmd", choices=["prepare", "status", "mark", "audit"])
     args = p.parse_args()
-    return {"prepare": cmd_prepare, "status": cmd_status, "mark": cmd_mark}[args.cmd]()
+    return {"prepare": cmd_prepare, "status": cmd_status,
+            "mark": cmd_mark, "audit": cmd_audit}[args.cmd]()
 
 
 if __name__ == "__main__":
