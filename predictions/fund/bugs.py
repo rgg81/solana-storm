@@ -59,6 +59,69 @@ def recent(hours: int = 24, min_severity: str = "MEDIUM") -> list[dict]:
     return out
 
 
+def mark_resolved(timestamp: int, resolution_note: str = "") -> bool:
+    """Mark a bug row as resolved=True by its timestamp.
+
+    Idempotent: returns True if a row was updated, False if no matching row was
+    found (or if already resolved). Atomic write — re-builds the file.
+
+    History: 59 entries accumulated `resolved: false` over the run with no
+    resolution mechanism, including 1 CRITICAL and 3 HIGH that were
+    subsequently fixed at the source. Multi-agent review 2026-06-06.
+    """
+    if not BUGS_PATH.exists():
+        return False
+    lines = BUGS_PATH.read_text().splitlines()
+    out: list[str] = []
+    updated = False
+    for line in lines:
+        if not line.strip():
+            out.append(line)
+            continue
+        try:
+            ev = json.loads(line)
+        except Exception:
+            out.append(line)
+            continue
+        if ev.get("timestamp") == timestamp and not ev.get("resolved"):
+            ev["resolved"] = True
+            if resolution_note:
+                ev["resolution_note"] = resolution_note
+            ev["resolved_at"] = int(time.time())
+            updated = True
+        out.append(json.dumps(ev))
+    if updated:
+        tmp = BUGS_PATH.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(out) + ("\n" if out else ""))
+        tmp.rename(BUGS_PATH)
+    return updated
+
+
+def unresolved_count(min_severity: str = "MEDIUM") -> int:
+    """Count unresolved bug rows at min_severity or above (default MEDIUM+).
+
+    Used by the Phase 7 inline auto-audit to fail the tick when CRITICAL
+    unresolved bugs accumulate."""
+    if not BUGS_PATH.exists():
+        return 0
+    sev_rank = {s: i for i, s in enumerate(SEVERITIES)}
+    min_rank = sev_rank.get(min_severity, 2)
+    n = 0
+    for line in BUGS_PATH.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            ev = json.loads(line)
+        except Exception:
+            continue
+        if ev.get("resolved"):
+            continue
+        if sev_rank.get(ev.get("severity", ""), 99) > min_rank:
+            continue
+        n += 1
+    return n
+
+
 def summary(hours: int = 24) -> dict:
     bugs = recent(hours, min_severity="LOW")
     by_sev = {s: 0 for s in SEVERITIES}

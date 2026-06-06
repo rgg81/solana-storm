@@ -15,10 +15,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 RPC_URL = os.environ.get("SOLANA_RPC_URL", "")
 
 
+_RPC_URL_LOG_THROTTLE_SEC = 60 * 60  # 1h — don't spam the log on cold-config runs
+_last_rpc_url_log_ts = 0
+
+
 def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
-    """Helius RPC with retry/backoff. Logs MEDIUM bug if all retries fail."""
-    if not RPC_URL: return None
+    """Helius RPC with retry/backoff. Logs MEDIUM bug if all retries fail OR
+    if SOLANA_RPC_URL is unset (the latter is throttled to 1× per hour so we
+    don't fire on every per-symbol call inside a single tick — but we still
+    surface the misconfig to bugs.jsonl so ops-health can detect it).
+
+    History: when RPC_URL is empty, _rpc historically returned None silently
+    so bugs.jsonl never recorded a Helius outage even though every on-chain
+    read failed for 100+ ticks (multi-agent review 2026-06-06)."""
+    global _last_rpc_url_log_ts
     from predictions.fund import bugs
+    if not RPC_URL:
+        now = int(time.time())
+        if now - _last_rpc_url_log_ts > _RPC_URL_LOG_THROTTLE_SEC:
+            bugs.log("MEDIUM", "helius_rpc.config",
+                      "SOLANA_RPC_URL env var unset — Helius calls returning None for all symbols",
+                      context={"method": method, "throttle_sec": _RPC_URL_LOG_THROTTLE_SEC})
+            _last_rpc_url_log_ts = now
+        return None
     last_err = None
     for attempt in range(retries):
         try:
