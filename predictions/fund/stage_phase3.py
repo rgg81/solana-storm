@@ -46,15 +46,53 @@ def _get_score(out: dict, ticker: str) -> float:
     return float(v) if isinstance(v, (int, float)) else 0.0
 
 
+class StaleSpecialistError(RuntimeError):
+    """Raised when /tmp/smaf_*.json specialist outputs are older than the
+    current tick's phase2 input — would mean a specialist dispatch failed and
+    we're about to consume a previous tick's scores. See predictions/fund/
+    tests/test_stale_specialist_guard.py for the rationale."""
+
+
+def _assert_fresh(p2_path: Path) -> None:
+    """Verify every /tmp/smaf_*.json mtime is newer than tick_phase2_input.json.
+
+    A specialist dispatch that fails to overwrite its /tmp output leaves the
+    previous tick's file in place; stage_phase3 would silently consume the
+    stale scores and write a corrupted risk input. This guard raises so the
+    runner can surface the failure instead of trading on stale consensus.
+    """
+    p2_mtime = p2_path.stat().st_mtime
+    stale = []
+    for key, path in TMP_PATHS.items():
+        p = Path(path)
+        if not p.exists():
+            stale.append(f"{key}: missing ({path})")
+            continue
+        lag_sec = p2_mtime - p.stat().st_mtime
+        # Allow a small floor (5s) so identical-timestamp writes don't trip.
+        if lag_sec > 5:
+            stale.append(
+                f"{key}: {lag_sec:.0f}s older than tick_phase2_input.json ({path})"
+            )
+    if stale:
+        raise StaleSpecialistError(
+            "Specialist outputs are stale — a Phase 2 dispatch likely failed "
+            "to write its /tmp file. Refusing to compute consensus from "
+            "previous-tick scores. Stale files:\n  - " + "\n  - ".join(stale)
+        )
+
+
 def stage() -> dict:
     """Build the Phase 3 (risk manager) input payload and write to state/tick_risk_input.json."""
+    p2_path = STATE / "tick_phase2_input.json"
+    _assert_fresh(p2_path)
     ma_opt = json.load(open(TMP_PATHS["ma_opt"]))
     ma_pes = json.load(open(TMP_PATHS["ma_pes"]))
     se_opt = json.load(open(TMP_PATHS["se_opt"]))
     se_pes = json.load(open(TMP_PATHS["se_pes"]))
     universe = json.load(open(TMP_PATHS["univ"]))
 
-    p2 = json.load(open(STATE / "tick_phase2_input.json"))
+    p2 = json.load(open(p2_path))
     per_sym_p2 = p2.get("per_symbol", {})
     tickers = [s["ticker"] for s in universe.get("selected_symbols", [])]
 

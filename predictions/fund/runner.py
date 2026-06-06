@@ -233,7 +233,44 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
                           context={"ticker": ticker})
         
         results.append({"trade": trade, "result": result})
-    
+
+    # Phase 2.5 probe audit trail (risk_manager.md, lines 95+109): every probe
+    # trade gets appended to probe_log.jsonl so the RM's 4-tick cooldown gate
+    # has something authoritative to read. Historically the file was referenced
+    # but had no writer — multi-agent review 2026-06-06.
+    probe = pm_output.get("regime_probe")
+    if probe and isinstance(probe, dict):
+        probe_ticker = probe.get("ticker")
+        probe_executed = any(
+            r.get("trade", {}).get("ticker") == probe_ticker
+            and r.get("trade", {}).get("side") == "buy"
+            and r.get("result", {}).get("executed")
+            for r in results
+        )
+        if probe_executed:
+            try:
+                from predictions.fund import universe_price_history as uph
+                probe_row = {
+                    "ts": int(time.time()),
+                    "tick_id": uph.latest_tick_id(),
+                    "ticker": probe_ticker,
+                    "consensus_at_entry": probe.get("consensus_at_entry"),
+                    "stop_loss_usd": probe.get("stop_loss_usd"),
+                    "tp_usd": probe.get("tp_usd"),
+                    "max_size_usd": probe.get("max_size_usd"),
+                    "rationale": str(probe.get("rationale", ""))[:300],
+                }
+                probe_log_path = STATE_DIR / "probe_log.jsonl"
+                probe_log_path.parent.mkdir(parents=True, exist_ok=True)
+                existing = probe_log_path.read_text() if probe_log_path.exists() else ""
+                tmp = probe_log_path.with_suffix(".jsonl.tmp")
+                tmp.write_text(existing + json.dumps(probe_row) + "\n")
+                tmp.rename(probe_log_path)
+            except Exception as e:
+                bugs.log("MEDIUM", "execution",
+                          f"probe_log append failed: {e}",
+                          context={"probe_ticker": probe_ticker})
+
     # Process stop_updates (TIGHTEN_STOP / TRAIL_UP / etc from Risk Mgr)
     for update in pm_output.get("stop_updates", []):
         ticker = update.get("ticker")

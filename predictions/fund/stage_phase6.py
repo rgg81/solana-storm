@@ -25,6 +25,7 @@ _REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO))
 
 from predictions.fund import universe_price_history as uph
+from predictions.fund import bugs
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / "state"
@@ -155,8 +156,8 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         # Symmetric (positive >500% AND negative <-95%) — see ANOMALY_*_THRESHOLD.
         if delta > ANOMALY_DELTA_PCT_POS_THRESHOLD or delta < ANOMALY_DELTA_PCT_NEG_THRESHOLD:
             try:
-                from predictions.fund import bugs
-                bugs.log_warning(
+                bugs.log(
+                    "MEDIUM",
                     "phase6.anomaly_delta_clamp",
                     f"{w['symbol']}: delta {delta:.1f}% in {w['window']} clamped — likely DexScreener pool error",
                     context={"symbol": w["symbol"], "window": w["window"],
@@ -166,6 +167,7 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
                              "current_tick_id": w.get("current_tick_id")},
                 )
             except Exception:
+                # Never let the audit log itself crash the trigger classification.
                 pass
             continue
 
