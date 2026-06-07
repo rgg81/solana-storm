@@ -85,7 +85,16 @@ def _assert_fresh(p2_path: Path) -> None:
     """
     p2_mtime = p2_path.stat().st_mtime
     stale = []
-    for key, path in TMP_PATHS.items():
+    # 'univ' is the Phase-1 scout output — it's the SOURCE consumed by Phase 2
+    # staging, so by construction it's always older than tick_phase2_input.json.
+    # Only the 4 specialist outputs (written DURING Phase 2 dispatch) need to
+    # be fresher than the phase2 input.
+    SPECIALIST_KEYS = ("ma_opt", "ma_pes", "se_opt", "se_pes")
+    for key in SPECIALIST_KEYS:
+        path = TMP_PATHS.get(key)
+        if path is None:
+            stale.append(f"{key}: TMP_PATHS entry missing")
+            continue
         p = Path(path)
         if not p.exists():
             stale.append(f"{key}: missing ({path})")
