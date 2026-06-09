@@ -14,6 +14,27 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 RPC_URL = os.environ.get("SOLANA_RPC_URL", "")
 
+# Gitignored fallback so a configured URL persists across sessions without
+# relying on shell-env injection timing. Drop one line (the full Helius RPC URL,
+# e.g. https://mainnet.helius-rpc.com/?api-key=KEY) into this file.
+_RPC_URL_FILE = Path(__file__).resolve().parents[1] / "state" / "helius_rpc_url.txt"
+
+
+def _get_rpc_url() -> str:
+    """Resolve the Helius RPC URL lazily. SOLANA_RPC_URL env var takes precedence;
+    otherwise read the gitignored state/helius_rpc_url.txt (single line). Read at
+    call time (not import) so a freshly-configured URL is picked up on the next
+    tick with no code edit. Returns "" when neither is set (blind mode)."""
+    env = os.environ.get("SOLANA_RPC_URL", "").strip()
+    if env:
+        return env
+    try:
+        if _RPC_URL_FILE.exists():
+            return _RPC_URL_FILE.read_text().strip()
+    except Exception:
+        pass
+    return ""
+
 
 _RPC_URL_LOG_THROTTLE_SEC = 60 * 60  # 1h — don't spam the log on cold-config runs
 _last_rpc_url_log_ts = 0
@@ -30,18 +51,19 @@ def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
     read failed for 100+ ticks (multi-agent review 2026-06-06)."""
     global _last_rpc_url_log_ts
     from predictions.fund import bugs
-    if not RPC_URL:
+    rpc_url = _get_rpc_url()
+    if not rpc_url:
         now = int(time.time())
         if now - _last_rpc_url_log_ts > _RPC_URL_LOG_THROTTLE_SEC:
             bugs.log("MEDIUM", "helius_rpc.config",
-                      "SOLANA_RPC_URL env var unset — Helius calls returning None for all symbols",
+                      "SOLANA_RPC_URL unset and state/helius_rpc_url.txt absent — Helius calls returning None for all symbols",
                       context={"method": method, "throttle_sec": _RPC_URL_LOG_THROTTLE_SEC})
             _last_rpc_url_log_ts = now
         return None
     last_err = None
     for attempt in range(retries):
         try:
-            r = requests.post(RPC_URL, json={"jsonrpc": "2.0", "id": 1,
+            r = requests.post(rpc_url, json={"jsonrpc": "2.0", "id": 1,
                                               "method": method, "params": params},
                                timeout=15)
             if r.status_code != 200:
