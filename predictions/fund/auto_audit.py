@@ -11,7 +11,7 @@ Checks (each a function returning dict {passed: bool, severity, msg, context}):
   3. no_critical_unresolved   — bugs.unresolved_count(CRITICAL) == 0
   4. specialist_scores_numeric — no null score values in the latest specialist outputs
   5. tmp_files_fresh          — every /tmp/smaf_*.json mtime >= phase2 input mtime
-  6. helius_health            — flag if rpc_failed rate > 90% across last 24h
+  6. helius_health            — flag only on REAL blindness (failures logged AND 0 live holder reads this tick); partial free-tier coverage passes
   7. consecutive_below_floor  — flag HIGH if > 50 consecutive flat ticks
 
 A failed check writes a HIGH bug (with category 'phase7_audit.<check_name>')
@@ -177,18 +177,44 @@ def check_tmp_files_fresh(grace_sec: int = 60 * 60) -> dict:
 
 
 def check_helius_health() -> dict:
-    """If we've logged >5 helius_rpc bugs in the last 24h, surface."""
+    """Fire only on REAL blindness, not accepted free-tier partial coverage.
+
+    The free Helius tier reliably serves only part of the universe per tick (the
+    rest time out and fall back to DexScreener). Counting raw retry-failure bugs
+    (>5/24h) fired on every full tick and desensitized the audit. We now fail
+    only when failures are logged AND zero symbols have live holder data in the
+    latest phase2 input — i.e. Helius is fully down (the original watchdog case,
+    incl. SOLANA_RPC_URL unset → 0 live + config bugs). Partial coverage passes.
+    See tests/test_helius_health_check.py."""
+    # Count live holder reads in the latest phase2 input.
+    live = 0
+    total = 0
+    p2 = STATE / "tick_phase2_input.json"
+    if p2.exists():
+        try:
+            d = json.loads(p2.read_text())
+            for sym in (d.get("per_symbol") or {}).values():
+                total += 1
+                hd = (sym or {}).get("holder_distribution") or {}
+                if "top_10_pct" in hd:
+                    live += 1
+        except Exception:
+            pass
     try:
         from predictions.fund import bugs
         recent = bugs.recent(hours=24, min_severity="MEDIUM")
+        helius_recent = [b for b in recent if "helius" in (b.get("component") or "")]
     except Exception:
-        return {"passed": True, "msg": "skip"}
-    helius_recent = [b for b in recent if "helius" in (b.get("component") or "")]
-    if len(helius_recent) > 5:
+        helius_recent = []
+    # Real outage: failures logged AND not a single live holder read this tick.
+    if helius_recent and total > 0 and live == 0:
         return {"passed": False, "severity": "MEDIUM",
-                "msg": f"{len(helius_recent)} helius failures in last 24h",
-                "context": {"n": len(helius_recent)}}
-    return {"passed": True, "msg": "ok"}
+                "msg": f"Helius fully blind — 0/{total} symbols have live holder data "
+                       f"({len(helius_recent)} failures/24h)",
+                "context": {"live": live, "total": total,
+                            "failures_24h": len(helius_recent)}}
+    return {"passed": True,
+            "msg": f"ok ({live}/{total} live holder reads)" if total else "ok"}
 
 
 def check_consecutive_below_floor() -> dict:
