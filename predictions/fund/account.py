@@ -20,6 +20,11 @@ ACCOUNT_PATH = _STATE_DIR / "account.json"
 TRADES_PATH = _STATE_DIR / "trades.jsonl"
 EQUITY_PATH = _STATE_DIR / "equity.jsonl"
 INITIAL_DEPOSIT_USD = 10_000.0
+# A position whose market value falls below this is treated as flat (a "full
+# close" leftover from float rounding). Below this, a residual is swept on sell
+# and ignored by stop-trigger / position-count logic so it can't fire phantom
+# stops or register as an open position. See tests/test_dust_sweep.py.
+DUST_USD = 0.01
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -107,7 +112,9 @@ def mark_to_market(state: dict, prices: dict[str, float]) -> dict:
         "peak_equity_usd": state["peak_equity_usd"],
         "positions": pos,
         "deployed_pct": holdings_value / equity if equity > 0 else 0.0,
-        "n_positions": sum(1 for h in state["holdings"].values() if h["units"] > 0),
+        # Count only positions worth more than DUST_USD — a float sliver from a
+        # full close is not an open position (see tests/test_dust_sweep.py).
+        "n_positions": sum(1 for p in pos.values() if p["market_value_usd"] >= DUST_USD),
     }
 
 
@@ -177,6 +184,14 @@ def execute_trade(state: dict, ticker: str, side: str, usd_amount: float,
         holdings["cost_basis_usd"] -= basis_released
         state["cash_usd"] += net_proceeds
         units_change = -units_to_sell
+        # Sweep float-rounding dust: if the residual is worth less than DUST_USD,
+        # the sell was effectively a full close. Zero the position and clear its
+        # stop/TP so the sliver can't re-fire a phantom trigger next tick.
+        if 0 < holdings["units"] * price_usd < DUST_USD:
+            holdings["units"] = 0.0
+            holdings["cost_basis_usd"] = 0.0
+            holdings["stop_loss_price_usd"] = None
+            holdings["take_profit_price_usd"] = None
 
     state["trade_count"] += 1
     state["total_fees_paid_usd"] += fee_usd
@@ -249,6 +264,9 @@ def check_stop_triggers(state: dict, prices: dict[str, float]) -> list[dict]:
         if units <= 0: continue
         cur = prices.get(ticker)
         if cur is None: continue
+        # Skip sub-dust residuals — a float sliver carrying a stale stop must not
+        # fire a phantom trigger (see tests/test_dust_sweep.py).
+        if units * cur < DUST_USD: continue
         # Update peak (for trailing stops)
         if cur > h.get("peak_price_since_entry", 0):
             h["peak_price_since_entry"] = cur
