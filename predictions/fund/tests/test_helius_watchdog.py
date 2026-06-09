@@ -18,7 +18,8 @@ from predictions.fund import bugs
 
 
 def test_rpc_logs_bug_when_url_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(onchain_stats, "RPC_URL", "")
+    # URL unresolved (env + .env + state file all empty/placeholder) → blind mode.
+    monkeypatch.setattr(onchain_stats, "_get_rpc_url", lambda: "")
     monkeypatch.setattr(onchain_stats, "_last_rpc_url_log_ts", 0)
     monkeypatch.setattr(bugs, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(bugs, "BUGS_PATH", tmp_path / "bugs.jsonl")
@@ -34,7 +35,7 @@ def test_rpc_logs_bug_when_url_missing(tmp_path, monkeypatch):
 
 def test_rpc_throttled_repeat_calls_do_not_re_log(tmp_path, monkeypatch):
     """Within 1h, repeat calls should not write a new bug each time."""
-    monkeypatch.setattr(onchain_stats, "RPC_URL", "")
+    monkeypatch.setattr(onchain_stats, "_get_rpc_url", lambda: "")
     monkeypatch.setattr(onchain_stats, "_last_rpc_url_log_ts", int(time.time()))
     monkeypatch.setattr(bugs, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(bugs, "BUGS_PATH", tmp_path / "bugs.jsonl")

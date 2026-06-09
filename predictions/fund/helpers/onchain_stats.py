@@ -14,25 +14,53 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 RPC_URL = os.environ.get("SOLANA_RPC_URL", "")
 
-# Gitignored fallback so a configured URL persists across sessions without
-# relying on shell-env injection timing. Drop one line (the full Helius RPC URL,
-# e.g. https://mainnet.helius-rpc.com/?api-key=KEY) into this file.
+# Repo-root .env (project convention — same file healthcheck.py reads) and a
+# gitignored state-file fallback. Either may hold the full Helius RPC URL, e.g.
+# https://mainnet.helius-rpc.com/?api-key=KEY
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 _RPC_URL_FILE = Path(__file__).resolve().parents[1] / "state" / "helius_rpc_url.txt"
 
 
-def _get_rpc_url() -> str:
-    """Resolve the Helius RPC URL lazily. SOLANA_RPC_URL env var takes precedence;
-    otherwise read the gitignored state/helius_rpc_url.txt (single line). Read at
-    call time (not import) so a freshly-configured URL is picked up on the next
-    tick with no code edit. Returns "" when neither is set (blind mode)."""
-    env = os.environ.get("SOLANA_RPC_URL", "").strip()
-    if env:
-        return env
+def _is_placeholder(url: str) -> bool:
+    """True for an unconfigured template value (e.g. the .env ships with
+    SOLANA_RPC_URL=...?api-key=PASTE_YOUR_HELIUS_FREE_KEY). Treated as blind so a
+    placeholder never reaches Helius as a bad key."""
+    if not url:
+        return True
+    u = url.upper()
+    return ("PASTE" in u or "YOUR_" in u or "<" in url or url.rstrip().endswith("api-key="))
+
+
+def _read_dotenv_rpc() -> str:
+    """Extract the SOLANA_RPC_URL value from repo-root .env (zero-dependency —
+    python-dotenv is not installed). Same convention healthcheck.py uses."""
     try:
-        if _RPC_URL_FILE.exists():
-            return _RPC_URL_FILE.read_text().strip()
+        if _ENV_FILE.exists():
+            for line in _ENV_FILE.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("SOLANA_RPC_URL="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
         pass
+    return ""
+
+
+def _get_rpc_url() -> str:
+    """Resolve the Helius RPC URL lazily, in precedence order:
+    1. SOLANA_RPC_URL env var
+    2. repo-root .env (project convention)
+    3. gitignored state/helius_rpc_url.txt
+    Read at call time (not import) so a freshly-configured URL is picked up on the
+    next tick with no code edit. Placeholder values are rejected (→ blind mode)."""
+    candidates = [os.environ.get("SOLANA_RPC_URL", "").strip(), _read_dotenv_rpc()]
+    try:
+        if _RPC_URL_FILE.exists():
+            candidates.append(_RPC_URL_FILE.read_text().strip())
+    except Exception:
+        pass
+    for c in candidates:
+        if c and not _is_placeholder(c):
+            return c
     return ""
 
 

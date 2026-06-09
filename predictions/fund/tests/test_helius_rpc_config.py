@@ -18,38 +18,66 @@ import pytest
 from predictions.fund.helpers import onchain_stats
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sources(tmp_path, monkeypatch):
+    """Point both file sources at isolated tmp paths so the real repo .env /
+    state file can't leak into assertions."""
+    monkeypatch.setattr(onchain_stats, "_ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "helius_rpc_url.txt")
+    return tmp_path
+
+
 def test_env_var_takes_precedence(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLANA_RPC_URL", "https://env.example/?api-key=ENV")
-    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "helius_rpc_url.txt")
     (tmp_path / "helius_rpc_url.txt").write_text("https://file.example/?api-key=FILE\n")
     assert onchain_stats._get_rpc_url() == "https://env.example/?api-key=ENV"
 
 
 def test_file_fallback_when_env_unset(tmp_path, monkeypatch):
     monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
-    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "helius_rpc_url.txt")
     (tmp_path / "helius_rpc_url.txt").write_text("  https://file.example/?api-key=FILE  \n")
     assert onchain_stats._get_rpc_url() == "https://file.example/?api-key=FILE"
 
 
 def test_empty_when_neither_set(tmp_path, monkeypatch):
     monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
-    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "absent.txt")
     assert onchain_stats._get_rpc_url() == ""
 
 
 def test_blank_env_falls_through_to_file(tmp_path, monkeypatch):
     """An empty/whitespace env var must not shadow a configured file."""
     monkeypatch.setenv("SOLANA_RPC_URL", "   ")
-    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "helius_rpc_url.txt")
     (tmp_path / "helius_rpc_url.txt").write_text("https://file.example/?api-key=FILE")
     assert onchain_stats._get_rpc_url() == "https://file.example/?api-key=FILE"
+
+
+def test_dotenv_fallback(tmp_path, monkeypatch):
+    """A real SOLANA_RPC_URL line in .env resolves (project convention)."""
+    monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
+    (tmp_path / ".env").write_text(
+        'HELIUS_API_KEY=abc\nSOLANA_RPC_URL="https://dotenv.example/?api-key=REAL"\nFOO=bar\n')
+    assert onchain_stats._get_rpc_url() == "https://dotenv.example/?api-key=REAL"
+
+
+def test_placeholder_url_rejected(tmp_path, monkeypatch):
+    """A PASTE_YOUR_... placeholder (env, .env, or file) is treated as blind."""
+    monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
+    (tmp_path / ".env").write_text(
+        "SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=PASTE_YOUR_HELIUS_FREE_KEY\n")
+    assert onchain_stats._get_rpc_url() == ""
+
+
+def test_dotenv_precedence_over_state_file(tmp_path, monkeypatch):
+    """.env (project convention) wins over the state-file fallback."""
+    monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
+    (tmp_path / ".env").write_text("SOLANA_RPC_URL=https://dotenv.example/?api-key=REAL\n")
+    (tmp_path / "helius_rpc_url.txt").write_text("https://file.example/?api-key=FILE")
+    assert onchain_stats._get_rpc_url() == "https://dotenv.example/?api-key=REAL"
 
 
 def test_rpc_logs_config_bug_when_unresolved(tmp_path, monkeypatch):
     """When no URL resolves, _rpc still returns None and logs the throttled
     config watchdog (regression guard on the existing behavior)."""
     monkeypatch.delenv("SOLANA_RPC_URL", raising=False)
-    monkeypatch.setattr(onchain_stats, "_RPC_URL_FILE", tmp_path / "absent.txt")
     monkeypatch.setattr(onchain_stats, "_last_rpc_url_log_ts", 0)
     assert onchain_stats._rpc("getTokenSupply", ["mint"]) is None
