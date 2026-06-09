@@ -117,7 +117,50 @@ def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
     return None
 
 
+# Holder distribution is slow-moving — cache successful reads so steady-state
+# ticks make few Helius calls (the free tier times out under burst). Gitignored.
+_HOLDER_CACHE_FILE = Path(__file__).resolve().parents[1] / "state" / "helius_holder_cache.json"
+_HOLDER_CACHE_TTL_SEC = 24 * 60 * 60  # 24h — concentration barely shifts for our universe
+
+
+def _load_holder_cache() -> dict:
+    try:
+        if _HOLDER_CACHE_FILE.exists():
+            return json.loads(_HOLDER_CACHE_FILE.read_text())
+    except Exception:
+        pass  # corrupt/partial cache → treat as empty, recompute
+    return {}
+
+
+def _store_holder_cache(cache: dict) -> None:
+    try:
+        _HOLDER_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _HOLDER_CACHE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache))
+        tmp.rename(_HOLDER_CACHE_FILE)
+    except Exception:
+        pass
+
+
 def holder_distribution(mint: str) -> dict:
+    """Top-10 holders + concentration, with a 24h TTL cache on successful reads.
+
+    Only real Helius successes (those carrying top_10_pct) are cached; a
+    DexScreener rpc_failed fallback is returned but NOT cached, so a free-tier
+    timeout on one tick is retried next tick until it succeeds. This converges
+    coverage toward the full universe while keeping per-tick call volume low."""
+    cache = _load_holder_cache()
+    entry = cache.get(mint)
+    if entry and (int(time.time()) - int(entry.get("ts", 0))) < _HOLDER_CACHE_TTL_SEC:
+        return entry["data"]
+    data = _compute_holder_distribution(mint)
+    if isinstance(data, dict) and "top_10_pct" in data:  # cache successes only
+        cache[mint] = {"ts": int(time.time()), "data": data}
+        _store_holder_cache(cache)
+    return data
+
+
+def _compute_holder_distribution(mint: str) -> dict:
     """Top-10 holders + concentration. Falls back to DexScreener pool data if Helius fails."""
     result = _rpc("getTokenLargestAccounts", [mint])
     if not result:
