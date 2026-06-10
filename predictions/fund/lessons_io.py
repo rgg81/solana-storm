@@ -315,6 +315,10 @@ def _aggregate_reflections() -> dict:
                 "supporting_count": r.get("supporting_count", 0),
                 "disconfirming_count": 0,
                 "status": "candidate",
+                # Latest EXPLICIT status the Reflector suggested (None = never
+                # suggested). A deliberate "candidate" hold-back vetoes count-based
+                # auto-promotion — the Reflector is the judgment agent.
+                "explicit_status": None,
                 "first_seen_tick": r.get("tick_id"),
                 "last_updated_tick": r.get("tick_id"),
             })
@@ -327,18 +331,30 @@ def _aggregate_reflections() -> dict:
             elif r.get("kind") == "disconfirming":
                 c["disconfirming_count"] += 1
             c["last_updated_tick"] = r.get("tick_id")
-            c["status"] = r.get("new_status_suggestion", c["status"])
+            sugg = r.get("new_status_suggestion")
+            if sugg is not None:
+                c["status"] = sugg
+                c["explicit_status"] = sugg  # remember the latest explicit call
 
-    # Apply promotion/demotion rules
+    # Apply promotion/demotion rules. Precedence:
+    #   1. disconfirming >= 3 → rejected (safety demotion, always wins)
+    #   2. Reflector explicitly held it at "candidate" → stay candidate (veto the
+    #      count rule; the judge deliberately wants more evidence of a specific kind)
+    #   3. supporting >= 3 (and not held) → validated (default auto-promotion)
+    #   4. otherwise → candidate
     candidates, validated, rejected = [], [], []
     for c in by_id.values():
-        if c["supporting_count"] >= 3 and c["disconfirming_count"] < 3:
-            c["status"] = "validated"
-            validated.append(c)
-        elif c["disconfirming_count"] >= 3:
+        if c["disconfirming_count"] >= 3:
             c["status"] = "rejected"
             rejected.append(c)
+        elif c.get("explicit_status") == "candidate":
+            c["status"] = "candidate"
+            candidates.append(c)
+        elif c["supporting_count"] >= 3:
+            c["status"] = "validated"
+            validated.append(c)
         else:
+            c["status"] = "candidate"
             candidates.append(c)
     return {"candidates": candidates, "validated": validated, "rejected": rejected,
             "total_reflection_rows": len(rows)}
