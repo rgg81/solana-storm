@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-06-10T06:35:58Z'
-total_ticks_recorded: 133
+last_updated: '2026-06-10T13:05:55Z'
+total_ticks_recorded: 135
 total_closed_trades_audited: 2
 scoreboard:
   market_analyst_optimist:
@@ -48,8 +48,8 @@ disagreement_outcome:
     n: 0
     avg_return_pct: null
     win_rate: null
-validated_rules_count: 20
-candidate_rules_count: 2
+validated_rules_count: 21
+candidate_rules_count: 1
 disconfirmed_rules_count: 3
 ---
 
@@ -107,10 +107,10 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 
 ### Validated (promoted)
 
-- **[calibration_observation]** Across 4 ticks and all 38 rejection what-ifs (11 universe symbols x 6h/12h/18h/24h windows), zero positive price deltas occurred. The strong_bear regime BUY-floor of +0.35 has produced a 0/38 missed-winner rate at the >=5% materiality bar.  _(supports=111, disconfirms=2)_
-- **[good_rejection]** High-conviction MA-Pessimist (<=-0.50) on rejected symbols has been directionally aligned 8/8 with the subsequent move; 2/8 (VIRTUAL t3, TRUMP t4) crossed the >=5% materiality bar.  _(supports=99, disconfirms=1)_
+- **[calibration_observation]** Across 4 ticks and all 38 rejection what-ifs (11 universe symbols x 6h/12h/18h/24h windows), zero positive price deltas occurred. The strong_bear regime BUY-floor of +0.35 has produced a 0/38 missed-winner rate at the >=5% materiality bar.  _(supports=112, disconfirms=2)_
+- **[good_rejection]** High-conviction MA-Pessimist (<=-0.50) on rejected symbols has been directionally aligned 8/8 with the subsequent move; 2/8 (VIRTUAL t3, TRUMP t4) crossed the >=5% materiality bar.  _(supports=100, disconfirms=1)_
 - **[good_rejection]** In confirmed SOL strong_bear regime with the +0.05 regime BUY-floor adder active, REJECT decisions where MA-Optimist was >=+0.40 still produced >=5% down moves within 6-24h.  _(supports=47, disconfirms=2)_
-- **[good_rejection]** The Risk Manager's practice of pre-committing a specific quantitative override tripwire BEFORE a catalyst rally peak (tick-27/28 set 'SE-Pes >=+0.10 AND consensus >=+0.20 for RENDER') held discipline through the tick-13/14 peak across all 3 candidate names (RENDER, JUP, PYTH) and  _(supports=28, disconfirms=0)_
+- **[good_rejection]** The Risk Manager's practice of pre-committing a specific quantitative override tripwire BEFORE a catalyst rally peak (tick-27/28 set 'SE-Pes >=+0.10 AND consensus >=+0.20 for RENDER') held discipline through the tick-13/14 peak across all 3 candidate names (RENDER, JUP, PYTH) and  _(supports=29, disconfirms=0)_
 - **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=25, disconfirms=1)_
 - **[calibration_observation]** Across the 9 reflector dispatches since the audit fix (tick-19 through tick-27), the maximum consensus printed on any universe symbol on any tick has been +0.20 (JUP at the tick-35 source in user numbering). The realized consensus distribution in this calm-bear tape is structural  _(supports=24, disconfirms=1)_
 - **[good_rejection]** The MA-Pes <=-0.50 HARD VETO anchor SET at the CURRENT tick (not just the prior-tick source) is empirically vindicated within the same 6h window as a forward-looking real-time defensive signal — JUP's current-tick MA-Pes -0.55 HARD VETO at t32 occurred in the same 6h window in wh  _(supports=18, disconfirms=0)_
@@ -127,11 +127,11 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 - **[good_rejection]** When a probe-path setup meets MA-Opt >=+0.45 catalyst trigger but consensus falls SHORT of the +0.20 second-leg gate by <=0.10 (knife-edge or wide-tight near-miss), the consensus axis tends to COLLAPSE within the next 6h (>=0.20 absolute drop) AND price tends to fall direction-al  _(supports=4, disconfirms=1)_
 - **[calibration_observation]** When a name has been through the full periphery-rotation cycle (lift -> persist -> unwind) and then prints a t29-class uncontested-bounce missed_winner at +5-8%/6h, the consensus axis on that name can SIMULTANEOUSLY lift through the +0.20 probe second-leg gate at the bounce tick   _(supports=4, disconfirms=1)_
 - **[calibration_observation]** Within the 5-dispatch post-audit silence stretch (tick-31 through tick-35), THREE INDEPENDENT axes of bear-stress de-escalation have emerged in this single dispatch for the first time: (a) trigger count receding 4 -> 3 -> 2 across the last three dispatches; (b) HARD VETO count re  _(supports=4, disconfirms=1)_
+- **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] When a near-gate name reaches the consensus contest-band (prior_consensus >= +0.18, the highest scores the slate produces) WHILE carrying high onchain_disagreement (>= 0.37 — the on-chain Optimist reading net-buy flow positively again  _(supports=3, disconfirms=0)_
 
 ### Candidate (awaiting promotion)
 
 - **[calibration_observation]** Solana-infra MA-Opt approach to +0.45 within strong_bear has now produced n=2 distinct-name FADE outcomes (JTO t38 MA-Opt +0.40 -> +0.30 by t40 with consensus 0.105 -> 0.095 plateau then fade; PYTH t40 MA-Opt +0.42 -> +0.05 at t41 with consensus +0.143 -> -0.063 reversal). Both n  _(supports=2, disconfirms=1)_
-- **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] When a near-gate name reaches the consensus contest-band (prior_consensus >= +0.18, the highest scores the slate produces) WHILE carrying high onchain_disagreement (>= 0.37 — the on-chain Optimist reading net-buy flow positively again  _(supports=2, disconfirms=0)_
 
 ### Disconfirmed (rejected anti-patterns)
 
