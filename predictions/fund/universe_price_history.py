@@ -36,6 +36,35 @@ from pathlib import Path
 _STATE_DIR = Path(__file__).resolve().parent / "state"
 _STATE_DIR.mkdir(parents=True, exist_ok=True)
 HISTORY_PATH = _STATE_DIR / "universe_price_history.jsonl"
+_RISK_JSON = Path("/tmp/smaf_risk.json")
+
+# A single-tick price move beyond this ratio (or its reciprocal) is a corrupt
+# data feed, not real volatility — nothing in our universe moves 100x in 6h. A
+# corrupt DexScreener response (tick-121: ~4800x for JUP/PYTH/PUMP/BONK) must not
+# poison the counterfactual ledger. Matches the Phase 7 price_history_jumps gate.
+_MAX_TICK_PRICE_RATIO = 100.0
+
+
+def _guard_price(symbol: str, price: float, prior_price: float | None) -> tuple[float, bool]:
+    """Return (clean_price, was_corrupt). If `price` is an implausible jump vs the
+    symbol's prior recorded price (>100x or <1/100x), treat it as a corrupt feed
+    and carry `prior_price` forward. First-seen symbols (no/zero prior) pass."""
+    if prior_price and prior_price > 0 and price and price > 0:
+        ratio = price / prior_price
+        if ratio > _MAX_TICK_PRICE_RATIO or ratio < 1.0 / _MAX_TICK_PRICE_RATIO:
+            return prior_price, True
+    return price, False
+
+
+def _last_prices() -> dict[str, float]:
+    """Most recent recorded price_usd per symbol (for the corruption guard)."""
+    out: dict[str, float] = {}
+    for r in load_all():
+        sym = r.get("symbol")
+        p = r.get("price_usd")
+        if sym and isinstance(p, (int, float)) and p > 0:
+            out[sym] = float(p)
+    return out
 
 
 def _append(row: dict) -> None:
@@ -71,7 +100,7 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
     # RM gave us new_entry_recommendations + existing_positions + rejections
     # Look in /tmp/smaf_risk.json for the source of truth (rm_reason)
     rm_raw = {}
-    rm_path = Path("/tmp/smaf_risk.json")
+    rm_path = _RISK_JSON
     if rm_path.exists():
         try:
             rm = json.loads(rm_path.read_text())
@@ -106,6 +135,7 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
     n = 0
     ts = int(time.time())
     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+    prior_prices = _last_prices()
     for ticker, sd in per_sym.items():
         if ticker in decisions:
             tag, reason, size = decisions[ticker]
@@ -114,12 +144,15 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
             reason = rm_raw.get(ticker, "")
             size = None
 
+        raw_price = float(sd.get("current_price_usd") or 0)
+        price_usd, corrupt = _guard_price(ticker, raw_price, prior_prices.get(ticker))
+
         row = {
             "tick_id": tick_id,
             "ts": ts,
             "iso_utc": iso,
             "symbol": ticker,
-            "price_usd": float(sd.get("current_price_usd") or 0),
+            "price_usd": price_usd,
             "vol_24h_usd": None,  # not in risk input; skip for now
             "liq_usd_main_pool": float(sd.get("liq_usd_main_pool") or 0),
             "consensus": float(sd.get("consensus") or 0),
@@ -135,6 +168,10 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
             "risk_mgr_max_size_pct": size,
             "regime_label": regime_label,
         }
+        if corrupt:
+            # Carried the prior price forward; keep the raw value for forensics.
+            row["price_corrupt_guard"] = True
+            row["original_corrupt_price_usd"] = raw_price
         _append(row)
         n += 1
     return n

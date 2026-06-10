@@ -64,7 +64,8 @@ def check_price_history_jumps() -> dict:
                 if (prev.get("price_corrected_2026_06_05") or prev.get("price_corrected_2026_06_06")
                     or curr.get("price_corrected_2026_06_05") or curr.get("price_corrected_2026_06_06")
                     or prev.get("price_under_investigation_2026_06_06")
-                    or curr.get("price_under_investigation_2026_06_06")):
+                    or curr.get("price_under_investigation_2026_06_06")
+                    or prev.get("price_corrupt_guard") or curr.get("price_corrupt_guard")):
                     continue
                 violations.append(f"{sym} t{prev.get('tick_id')}->t{curr.get('tick_id')}: ratio {ratio:.2f}x")
     if violations:
