@@ -72,7 +72,7 @@ def test_audit_coverage_fails_when_sell_unaudited(isolated_state):
     ])
     r = auto_audit.check_audit_coverage()
     assert r["passed"] is False
-    assert "RENDER" in r["context"]["missing"]
+    assert any("RENDER" in g for g in r["context"]["gaps"])
 
 
 def test_run_returns_summary(isolated_state):

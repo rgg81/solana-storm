@@ -75,14 +75,29 @@ def check_price_history_jumps() -> dict:
 
 
 def check_audit_coverage() -> dict:
+    """Every full-close sell must have a matching audit row. Count PER TICKER, not
+    as a set difference: a ticker traded twice but audited once (the 2026-06-11
+    JTO-probe gap — JTO had 2 sells but 1 audit row, the +$18.67 probe win never
+    logged) collapses to an empty set-difference and silently passes. Counting
+    catches it. See state_patches/p20260611_jto_probe_audit_backfill.py and
+    tests/test_audit_coverage_per_trade.py."""
     trades = _load_jsonl(STATE / "trades.jsonl")
     audit = _load_jsonl(STATE / "closed_trades_audit.jsonl")
-    sell_tickers = {t.get("ticker") for t in trades if t.get("side") == "sell"}
-    audit_tickers = {a.get("ticker") for a in audit}
-    missing = sell_tickers - audit_tickers
-    if missing:
+    sell_counts: dict[str, int] = defaultdict(int)
+    for t in trades:
+        if t.get("side") == "sell":
+            sell_counts[t.get("ticker")] += 1
+    audit_counts: dict[str, int] = defaultdict(int)
+    for a in audit:
+        audit_counts[a.get("ticker")] += 1
+    gaps = []
+    for tk, n_sell in sell_counts.items():
+        n_audit = audit_counts.get(tk, 0)
+        if n_audit < n_sell:
+            gaps.append(f"{tk}: {n_sell} sells but {n_audit} audit rows")
+    if gaps:
         return {"passed": False, "severity": "HIGH", "msg": "audit coverage gap",
-                "context": {"missing": sorted(missing)}}
+                "context": {"gaps": sorted(gaps)}}
     return {"passed": True, "msg": "ok"}
 
 
