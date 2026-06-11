@@ -1,0 +1,12 @@
+# Python tooling config for the `predictions/` paper-trading subsystem.
+# (The Rust workspace is configured separately in Cargo.toml.)
+#
+# pytest needs the repo root on sys.path so `from predictions.fund import ...`
+# resolves. Locally that happened only via `python -m pytest` (which adds CWD);
+# bare `pytest` in CI failed with `ModuleNotFoundError: No module named
+# 'predictions'`. Declaring pytest config here makes the repo root the rootdir and
+# `pythonpath = ["."]` puts it on sys.path, so `pytest predictions/fund/tests/`
+# works the same way everywhere (CI, `python -m pytest`, and bare `pytest`).
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["predictions/fund/tests"]
