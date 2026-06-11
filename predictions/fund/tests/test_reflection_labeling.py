@@ -83,3 +83,29 @@ def test_later_suggestion_overrides_earlier(monkeypatch):
             _confirm_row("c5", 4, "validated", 3)]
     agg = _agg(monkeypatch, rows)
     assert any(c["candidate_id"] == "c5" for c in agg["validated"])
+
+
+def test_explicit_rejected_retires_without_three_disconfirms(monkeypatch):
+    """THE FIX (tick-125): a single decisive falsification — Reflector's explicit
+    'rejected' on a disconfirming row — retires the rule WITHOUT waiting for the
+    count rule's 3 mechanical disconfirms. Mirrors the explicit-'candidate' hold:
+    the Reflector is the judgment agent. (Bug: a falsified-on-arrival hypothesis,
+    e.g. the PYTH catalyst-leg carve-out, was silently kept as a candidate.)"""
+    rows = [_candidate_row("c6", supporting=0),
+            {"kind_row": "confirmation", "prior_candidate_id": "c6",
+             "kind": "disconfirming", "new_status_suggestion": "rejected", "tick_id": 2}]
+    agg = _agg(monkeypatch, rows)
+    assert any(c["candidate_id"] == "c6" for c in agg["rejected"])
+    assert not any(c["candidate_id"] == "c6" for c in agg["candidates"])
+
+
+def test_explicit_rejected_overrides_supporting_count(monkeypatch):
+    """An explicit 'rejected' wins over a high supporting_count (judgment retirement
+    of a rule that had accumulated confirmations before being falsified)."""
+    rows = [_candidate_row("c7"),
+            _confirm_row("c7", 5, "candidate", 2),  # had support, was a live candidate
+            {"kind_row": "confirmation", "prior_candidate_id": "c7",
+             "kind": "disconfirming", "new_status_suggestion": "rejected", "tick_id": 3}]
+    agg = _agg(monkeypatch, rows)
+    assert any(c["candidate_id"] == "c7" for c in agg["rejected"])
+    assert not any(c["candidate_id"] == "c7" for c in agg["validated"])

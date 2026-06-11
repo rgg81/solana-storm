@@ -338,13 +338,21 @@ def _aggregate_reflections() -> dict:
 
     # Apply promotion/demotion rules. Precedence:
     #   1. disconfirming >= 3 → rejected (safety demotion, always wins)
-    #   2. Reflector explicitly held it at "candidate" → stay candidate (veto the
+    #   2. Reflector explicitly called "rejected" → rejected (judgment retirement;
+    #      a single decisive falsification test can retire a hypothesis without
+    #      waiting for 3 mechanical disconfirming rows — the Reflector is the judge.
+    #      e.g. a watchlist hypothesis falsified-on-arrival by the exact test case it
+    #      targeted). Honored symmetrically with the explicit-"candidate" hold below.
+    #   3. Reflector explicitly held it at "candidate" → stay candidate (veto the
     #      count rule; the judge deliberately wants more evidence of a specific kind)
-    #   3. supporting >= 3 (and not held) → validated (default auto-promotion)
-    #   4. otherwise → candidate
+    #   4. supporting >= 3 (and not held) → validated (default auto-promotion)
+    #   5. otherwise → candidate
     candidates, validated, rejected = [], [], []
     for c in by_id.values():
         if c["disconfirming_count"] >= 3:
+            c["status"] = "rejected"
+            rejected.append(c)
+        elif c.get("explicit_status") == "rejected":
             c["status"] = "rejected"
             rejected.append(c)
         elif c.get("explicit_status") == "candidate":
