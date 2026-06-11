@@ -131,6 +131,28 @@ def latest_reflector_run() -> dict | None:
     return None
 
 
+def _resolve_regime_label(regime_label: str | None, detect_fn=None) -> str | None:
+    """Resolve the regime label written into the counterfactual ledger.
+
+    Returns the caller-supplied label if set, else derives it LIVE from the SOL
+    regime detector. The detector returns its trend under the key ``sol_trend``
+    (see regime.detect_sol_regime). The previous inline code read ``trend`` — and
+    a ``regime_cache.json['sol_regime']['trend']`` path that is never written
+    (the cache holds only raw price arrays: sol_daily_200d, universe_30d_prices).
+    Both yielded None, so 100% of ledger rows (0/651) logged regime_label=null,
+    silently blinding every regime-sliced audit. This helper is the single source
+    of truth for the derivation and reads the correct producer key. Audit-only:
+    the Risk Manager receives the regime via its prompt, so no trade was affected.
+    """
+    if regime_label is not None:
+        return regime_label
+    fn = detect_fn if detect_fn is not None else regime.detect_sol_regime
+    try:
+        return fn().get("sol_trend")
+    except Exception:
+        return None
+
+
 def run(regime_label: str | None = None) -> dict:
     """Execute Phase 6. Returns a result dict for the orchestrator/caller."""
     # Load this-tick artifacts
@@ -147,16 +169,8 @@ def run(regime_label: str | None = None) -> dict:
     # Pick a fresh, monotonic tick_id (independent of equity.jsonl wiggle)
     new_tick_id = (uph.latest_tick_id() or 0) + 1
 
-    # Regime label — read from cache if not provided
-    if regime_label is None:
-        try:
-            rc = STATE / "regime_cache.json"
-            if rc.exists():
-                regime_label = json.loads(rc.read_text()).get("sol_regime", {}).get("trend")
-        except Exception: regime_label = None
-        if regime_label is None:
-            try: regime_label = regime.detect_sol_regime().get("trend")
-            except Exception: pass
+    # Regime label for the counterfactual ledger.
+    regime_label = _resolve_regime_label(regime_label)
 
     # Step 1: snapshot
     n_snapped = uph.snapshot_tick(tick_id=new_tick_id, risk_input=risk,
