@@ -319,6 +319,12 @@ def _aggregate_reflections() -> dict:
                 # suggested). A deliberate "candidate" hold-back vetoes count-based
                 # auto-promotion — the Reflector is the judgment agent.
                 "explicit_status": None,
+                # Did the rule earn supporting evidence in a FORWARD tick (a
+                # confirmation row), or is its supporting_count purely the
+                # Reflector's backward-looking genesis seed? Count-based promotion
+                # requires forward confirmation — a candidate must keep holding in
+                # live ticks, not just survive its initial retrospective count.
+                "has_forward_confirming": False,
                 "first_seen_tick": r.get("tick_id"),
                 "last_updated_tick": r.get("tick_id"),
             })
@@ -328,6 +334,7 @@ def _aggregate_reflections() -> dict:
             c = by_id[cid]
             if r.get("kind") == "confirming":
                 c["supporting_count"] = max(c["supporting_count"], r.get("new_supporting_count", c["supporting_count"] + 1))
+                c["has_forward_confirming"] = True
             elif r.get("kind") == "disconfirming":
                 c["disconfirming_count"] += 1
             c["last_updated_tick"] = r.get("tick_id")
@@ -345,8 +352,14 @@ def _aggregate_reflections() -> dict:
     #      targeted). Honored symmetrically with the explicit-"candidate" hold below.
     #   3. Reflector explicitly held it at "candidate" → stay candidate (veto the
     #      count rule; the judge deliberately wants more evidence of a specific kind)
-    #   4. supporting >= 3 (and not held) → validated (default auto-promotion)
-    #   5. otherwise → candidate
+    #   4. Reflector explicitly called "validated" → validated (judgment promotion;
+    #      symmetric with the explicit "rejected"/"candidate" calls above)
+    #   5. supporting >= 3 AND earned via FORWARD confirmation → validated. A high
+    #      supporting_count on the genesis new_candidate row alone is NOT enough —
+    #      that count is the Reflector's backward-looking evidence; the
+    #      candidate→validated lifecycle requires the rule to keep holding in a
+    #      later live tick (a confirmation row), not just survive its first appearance.
+    #   6. otherwise → candidate
     candidates, validated, rejected = [], [], []
     for c in by_id.values():
         if c["disconfirming_count"] >= 3:
@@ -358,7 +371,10 @@ def _aggregate_reflections() -> dict:
         elif c.get("explicit_status") == "candidate":
             c["status"] = "candidate"
             candidates.append(c)
-        elif c["supporting_count"] >= 3:
+        elif c.get("explicit_status") == "validated":
+            c["status"] = "validated"
+            validated.append(c)
+        elif c["supporting_count"] >= 3 and c.get("has_forward_confirming"):
             c["status"] = "validated"
             validated.append(c)
         else:

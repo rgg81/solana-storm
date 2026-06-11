@@ -109,3 +109,39 @@ def test_explicit_rejected_overrides_supporting_count(monkeypatch):
     agg = _agg(monkeypatch, rows)
     assert any(c["candidate_id"] == "c7" for c in agg["rejected"])
     assert not any(c["candidate_id"] == "c7" for c in agg["validated"])
+
+
+def test_genesis_high_supporting_count_stays_candidate(monkeypatch):
+    """THE FIX (tick-126): a brand-new candidate whose genesis new_candidate row
+    carries a high BACKWARD-looking supporting_count must NOT be born 'validated'.
+    Promotion requires FORWARD confirmation across a later tick — the
+    candidate→validated lifecycle exists precisely so a rule must keep holding in
+    live ticks, not just survive the Reflector's initial retrospective evidence
+    count. (Bug: the 'two-sided probe bar' calibration_observation, seeded
+    supporting=3 with zero forward confirmations, was auto-promoted to validated
+    on its very first appearance, skipping the lifecycle entirely.)"""
+    rows = [_candidate_row("c_genesis", supporting=3)]  # genesis only, no confirmations
+    agg = _agg(monkeypatch, rows)
+    assert any(c["candidate_id"] == "c_genesis" for c in agg["candidates"])
+    assert not any(c["candidate_id"] == "c_genesis" for c in agg["validated"])
+
+
+def test_genesis_count_plus_forward_confirmation_promotes(monkeypatch):
+    """A genesis candidate DOES auto-promote once a forward confirming row shows the
+    rule kept holding in a later tick. Forward confirmation is what 'validated' means;
+    the genesis seed alone is not enough, but seed + a live confirmation is."""
+    rows = [_candidate_row("c_fwd", supporting=3),
+            _confirm_row("c_fwd", 3, None, 2)]  # forward confirming, no explicit status
+    agg = _agg(monkeypatch, rows)
+    assert any(c["candidate_id"] == "c_fwd" for c in agg["validated"])
+
+
+def test_explicit_validated_promotes_without_forward_count(monkeypatch):
+    """The Reflector can explicitly promote a candidate to 'validated' via judgment
+    even before the count rule's forward-confirmation gate — honored symmetrically
+    with the explicit-'candidate' hold and explicit-'rejected' retirement."""
+    rows = [_candidate_row("c_exval", supporting=1),
+            _confirm_row("c_exval", 2, "validated", 2)]  # forward row, explicit validated, count<3
+    agg = _agg(monkeypatch, rows)
+    assert any(c["candidate_id"] == "c_exval" for c in agg["validated"])
+    assert not any(c["candidate_id"] == "c_exval" for c in agg["candidates"])
