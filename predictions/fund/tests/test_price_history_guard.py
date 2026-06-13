@@ -21,36 +21,56 @@ from predictions.fund import universe_price_history as uph
 
 
 def test_guard_passes_normal_move():
-    price, corrupt = uph._guard_price("PYTH", 0.0317, 0.0302)
-    assert corrupt is False and price == 0.0317
+    price, reason = uph._guard_price("PYTH", 0.0317, 0.0302)
+    assert reason is None and price == 0.0317
 
 
 def test_guard_passes_large_but_real_move():
     """A 5x move (wild memecoin) is still real — must pass."""
-    price, corrupt = uph._guard_price("WIF", 0.50, 0.10)
-    assert corrupt is False and price == 0.50
+    price, reason = uph._guard_price("WIF", 0.50, 0.10)
+    assert reason is None and price == 0.50
 
 
 def test_guard_catches_upward_corruption():
     """~4800x jump (the tick-121 corruption) is carried forward + flagged."""
-    price, corrupt = uph._guard_price("PYTH", 154.69, 0.0317)
-    assert corrupt is True and price == 0.0317
+    price, reason = uph._guard_price("PYTH", 154.69, 0.0317)
+    assert reason == "corrupt_jump" and price == 0.0317
 
 
 def test_guard_catches_downward_corruption():
-    price, corrupt = uph._guard_price("PYTH", 0.0001, 0.0317)
-    assert corrupt is True and price == 0.0317
+    price, reason = uph._guard_price("PYTH", 0.0001, 0.0317)
+    assert reason == "corrupt_jump" and price == 0.0317
 
 
 def test_guard_passes_first_seen_symbol():
     """No prior price → cannot judge → accept."""
-    price, corrupt = uph._guard_price("NEW", 1.23, None)
-    assert corrupt is False and price == 1.23
+    price, reason = uph._guard_price("NEW", 1.23, None)
+    assert reason is None and price == 1.23
 
 
 def test_guard_passes_when_prior_zero():
-    price, corrupt = uph._guard_price("X", 1.23, 0.0)
-    assert corrupt is False and price == 1.23
+    price, reason = uph._guard_price("X", 1.23, 0.0)
+    assert reason is None and price == 1.23
+
+
+def test_guard_carries_forward_fetch_failure():
+    """THE FIX (tick-132): a fetch failure (price 0/missing, e.g. SPX's DexScreener
+    miss) carries the prior price forward — never records a $0 row, which would
+    poison forward what-if deltas for that symbol."""
+    price, reason = uph._guard_price("SPX", 0.0, 0.3179)
+    assert reason == "fetch_failure" and price == 0.3179
+
+
+def test_guard_fetch_failure_none_price():
+    price, reason = uph._guard_price("SPX", None, 0.3179)
+    assert reason == "fetch_failure" and price == 0.3179
+
+
+def test_guard_fetch_failure_first_seen_passes():
+    """A 0 price with no prior (first-seen) cannot be repaired → pass through as-is
+    (reason None) rather than fabricate a price."""
+    price, reason = uph._guard_price("NEW", 0.0, None)
+    assert reason is None and price == 0.0
 
 
 def test_snapshot_carries_forward_corrupt_price(tmp_path, monkeypatch):
@@ -70,3 +90,22 @@ def test_snapshot_carries_forward_corrupt_price(tmp_path, monkeypatch):
     assert t54["price_usd"] == 0.0317  # carried forward, not 154.69
     assert t54.get("price_corrupt_guard") is True
     assert t54.get("original_corrupt_price_usd") == 154.69
+
+
+def test_snapshot_carries_forward_fetch_failure(tmp_path, monkeypatch):
+    """Integration: a fetch failure (current_price_usd 0 in the risk input — a
+    DexScreener miss) carries the symbol's last history price forward and flags the
+    row, instead of writing a $0 that poisons the ledger."""
+    monkeypatch.setattr(uph, "HISTORY_PATH", tmp_path / "hist.jsonl")
+    monkeypatch.setattr(uph, "_RISK_JSON", tmp_path / "smaf_risk.json")
+    (tmp_path / "hist.jsonl").write_text(json.dumps({
+        "tick_id": 66, "symbol": "SPX", "price_usd": 0.3179}) + "\n")
+    risk_input = {"specialist_consensus_per_symbol": {
+        "SPX": {"current_price_usd": 0.0, "consensus": 0.0}}}
+    n = uph.snapshot_tick(67, risk_input, {"trades": []})
+    assert n == 1
+    rows = [json.loads(l) for l in (tmp_path / "hist.jsonl").read_text().splitlines()]
+    t67 = [r for r in rows if r["tick_id"] == 67][0]
+    assert t67["price_usd"] == 0.3179  # carried forward, not 0
+    assert t67.get("price_fetch_failure_carryforward") is True
+    assert t67.get("original_fetch_failure_price_usd") == 0.0

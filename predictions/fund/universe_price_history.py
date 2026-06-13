@@ -45,15 +45,26 @@ _RISK_JSON = Path("/tmp/smaf_risk.json")
 _MAX_TICK_PRICE_RATIO = 100.0
 
 
-def _guard_price(symbol: str, price: float, prior_price: float | None) -> tuple[float, bool]:
-    """Return (clean_price, was_corrupt). If `price` is an implausible jump vs the
-    symbol's prior recorded price (>100x or <1/100x), treat it as a corrupt feed
-    and carry `prior_price` forward. First-seen symbols (no/zero prior) pass."""
-    if prior_price and prior_price > 0 and price and price > 0:
+def _guard_price(symbol: str, price: float, prior_price: float | None) -> tuple[float, str | None]:
+    """Return (clean_price, reason). `reason` is:
+      - None            → the raw price is used as-is (normal move, or first-seen).
+      - "corrupt_jump"  → an implausible >100x/<1/100x move vs the symbol's prior
+                          recorded price; carry `prior_price` forward (tick-121).
+      - "fetch_failure" → the feed returned 0/missing (a DexScreener miss, e.g. SPX
+                          at tick-132); carry `prior_price` forward rather than
+                          poison the ledger with a $0 row — a $0 also produces
+                          nonsensical forward what-if deltas for that symbol.
+    First-seen symbols with no usable prior pass through with reason None."""
+    has_prior = bool(prior_price and prior_price > 0)
+    # Fetch failure / missing price: carry the prior forward if we have one.
+    if not price or price <= 0:
+        return (prior_price, "fetch_failure") if has_prior else (price, None)
+    # Implausible jump vs the prior recorded price.
+    if has_prior:
         ratio = price / prior_price
         if ratio > _MAX_TICK_PRICE_RATIO or ratio < 1.0 / _MAX_TICK_PRICE_RATIO:
-            return prior_price, True
-    return price, False
+            return prior_price, "corrupt_jump"
+    return price, None
 
 
 def _last_prices() -> dict[str, float]:
@@ -145,7 +156,7 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
             size = None
 
         raw_price = float(sd.get("current_price_usd") or 0)
-        price_usd, corrupt = _guard_price(ticker, raw_price, prior_prices.get(ticker))
+        price_usd, guard_reason = _guard_price(ticker, raw_price, prior_prices.get(ticker))
 
         row = {
             "tick_id": tick_id,
@@ -168,10 +179,14 @@ def snapshot_tick(tick_id: int, risk_input: dict, pm_output: dict,
             "risk_mgr_max_size_pct": size,
             "regime_label": regime_label,
         }
-        if corrupt:
+        if guard_reason == "corrupt_jump":
             # Carried the prior price forward; keep the raw value for forensics.
             row["price_corrupt_guard"] = True
             row["original_corrupt_price_usd"] = raw_price
+        elif guard_reason == "fetch_failure":
+            # Feed returned 0/missing; carried the prior price forward.
+            row["price_fetch_failure_carryforward"] = True
+            row["original_fetch_failure_price_usd"] = raw_price
         _append(row)
         n += 1
     return n
