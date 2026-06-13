@@ -149,6 +149,13 @@ def execute_trade(state: dict, ticker: str, side: str, usd_amount: float,
         if state["cash_usd"] < usd_amount:
             return {"executed": False, "reason": "INSUFFICIENT_CASH",
                     "have": state["cash_usd"], "need": usd_amount}
+        # A FRESH entry opens from flat (pre-buy units worth < DUST_USD). The holdings
+        # dict persists after a full close (dust-sweep zeros units but doesn't delete
+        # it), so first_buy_unix / peak_price_since_entry from a PRIOR position would
+        # carry over and mislead trailing-stop logic (tick-133: a stale $2.36 peak on
+        # the RENDER probe re-opened at $1.80). Reset those on a fresh open; an ADD to
+        # an already-open position keeps the original history + the higher running peak.
+        fresh_entry = holdings["units"] * price_usd < DUST_USD
         # Effective amount actually getting into position (after fees & slippage)
         effective_usd = usd_amount - cost_usd
         units_bought = effective_usd / price_usd
@@ -158,9 +165,13 @@ def execute_trade(state: dict, ticker: str, side: str, usd_amount: float,
         # Average entry price (cost-basis-weighted)
         holdings["avg_entry_price_usd"] = (holdings["cost_basis_usd"] / holdings["units"]
                                             if holdings["units"] > 0 else 0)
-        if holdings["first_buy_unix"] == 0:
-            holdings["first_buy_unix"] = int(time.time())
-        holdings["last_buy_unix"] = int(time.time())
+        now = int(time.time())
+        if fresh_entry:
+            holdings["first_buy_unix"] = now
+            holdings["peak_price_since_entry"] = price_usd
+        elif holdings["first_buy_unix"] == 0:
+            holdings["first_buy_unix"] = now
+        holdings["last_buy_unix"] = now
         units_change = units_bought
     else:  # sell
         # usd_amount = how many USD we WANT to receive (gross). We size the units accordingly.
