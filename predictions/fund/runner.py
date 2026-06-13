@@ -113,6 +113,27 @@ def stage_universe(out_path: Path) -> dict:
     return payload
 
 
+def _mtm_prices(pm_output: dict, per_sym: dict | None) -> dict:
+    """Build the price map for the end-of-execution mark-to-market.
+
+    Prices EVERY symbol that has a live current_price_usd in this tick's risk
+    input (`per_sym`), so held positions NOT in the trade list are still valued at
+    market. Previously only buy-trade tickers were priced, so a stop-update-only
+    tick (no trades) left the map empty and mark_to_market fell back to cost basis,
+    snapshotting an inflated equity (tick-134: a TIGHTEN_STOP tick mis-valued the
+    open RENDER position at cost). Trade fills override the risk-input mid-price.
+    """
+    prices: dict[str, float] = {}
+    for tk, sd in (per_sym or {}).items():
+        cp = float((sd or {}).get("current_price_usd") or 0)
+        if cp > 0:
+            prices[tk] = cp
+    for t in pm_output.get("trades", []) or []:
+        if t.get("side") == "buy" and t.get("price_usd"):
+            prices[t["ticker"]] = float(t["price_usd"])
+    return prices
+
+
 def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
     """Execute Portfolio Manager orders against the account.
     
@@ -291,11 +312,10 @@ def execute_pm_orders(pm_output: dict, prices: dict | None = None) -> dict:
                       context=update)
     
     acct.save(state)
-    
+
     # Mark-to-market + snapshot equity
     if prices is None:
-        prices = {t["ticker"]: float(t["price_usd"]) for t in pm_output.get("trades", [])
-                  if t.get("side") == "buy" and t.get("price_usd")}
+        prices = _mtm_prices(pm_output, per_sym)
     mtm = acct.mark_to_market(state, prices)
     acct.snapshot_equity(state, mtm)
     
