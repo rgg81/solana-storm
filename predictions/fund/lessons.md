@@ -1,23 +1,23 @@
 ---
 version: 1
-last_updated: '2026-06-14T10:18:29Z'
+last_updated: '2026-06-14T15:13:34Z'
 total_ticks_recorded: 161
-total_closed_trades_audited: 3
+total_closed_trades_audited: 4
 scoreboard:
   market_analyst_optimist:
-    closed_trades_scored: 1
+    closed_trades_scored: 2
     correct_directional_calls: 0
     avg_score_on_winners: null
-    avg_score_on_losers: 0.75
+    avg_score_on_losers: 0.6
     over_confidence_flag: false
-    _n_losers: 1
+    _n_losers: 2
   market_analyst_pessimist:
-    closed_trades_scored: 1
+    closed_trades_scored: 2
     correct_directional_calls: 0
     avg_score_on_winners: null
-    avg_score_on_losers: 0.1
+    avg_score_on_losers: 0.16
     over_caution_flag: false
-    _n_losers: 1
+    _n_losers: 2
   solana_expert:
     closed_trades_scored: 1
     correct_directional_calls: 0
@@ -30,16 +30,26 @@ scoreboard:
     size_adjustments_correlation: null
   portfolio_manager:
     trades_executed: 0
-    closes_executed: 1
+    closes_executed: 2
+  solana_expert_optimist:
+    avg_score_on_losers: 0.3
+    _n_losers: 1
+    closed_trades_scored: 1
+    correct_directional_calls: 0
+  solana_expert_pessimist:
+    avg_score_on_losers: 0.05
+    _n_losers: 1
+    closed_trades_scored: 1
+    correct_directional_calls: 0
 disagreement_outcome:
   spread_0_to_15:
     n: 0
     avg_return_pct: null
     win_rate: null
   spread_15_to_40:
-    n: 0
-    avg_return_pct: null
-    win_rate: null
+    n: 1
+    avg_return_pct: -4.03
+    win_rate: 0.0
   spread_40_to_70:
     n: 1
     avg_return_pct: -6.26
@@ -51,6 +61,34 @@ disagreement_outcome:
 validated_rules_count: 10
 candidate_rules_count: 13
 disconfirmed_rules_count: 6
+per_symbol_specialist_accuracy:
+  RENDER:
+    closed_trades: 1
+    last_realized_pct: -4.03
+    cumulative_realized_pct: -4.03
+    avg_realized_pct: -4.03
+    market_analyst_optimist:
+      avg_entry_score: 0.45
+      correct_directional: 0
+      n: 1
+    market_analyst_pessimist:
+      avg_entry_score: 0.22
+      correct_directional: 0
+      n: 1
+    solana_expert_optimist:
+      avg_entry_score: 0.3
+      correct_directional: 0
+      n: 1
+    solana_expert_pessimist:
+      avg_entry_score: 0.05
+      correct_directional: 0
+      n: 1
+risk_calibration:
+  stop_outcomes:
+    n_total: 1
+    n_triggered_savings: 0
+    n_triggered_winners: 0
+    n_never_triggered: 1
 ---
 
 # SMAF — Rolling Lessons & Specialist Memory
