@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-06-15T12:04:00Z'
-total_ticks_recorded: 167
+last_updated: '2026-06-15T18:52:37Z'
+total_ticks_recorded: 169
 total_closed_trades_audited: 4
 scoreboard:
   market_analyst_optimist:
@@ -159,7 +159,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 ### Candidate (awaiting promotion)
 
 - **[calibration_observation]** Across the 9 reflector dispatches since the audit fix (tick-19 through tick-27), the maximum consensus printed on any universe symbol on any tick has been +0.20 (JUP at the tick-35 source in user numbering). The realized consensus distribution in this calm-bear tape is structural  _(supports=32, disconfirms=1)_
-- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=27, disconfirms=1)_
+- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=28, disconfirms=1)_
 - **[calibration_observation]** When the cand_24_dc388268 periphery-rotation cycle (lift t23 -> persist -> unwind t28 -> bounce t29) enters a SECOND material leg-down (t31->t32 in this run) AND SOL PARTICIPATES in that leg-down for the first time (vs. staying flat on the prior 4 legs), the regime-axis has trans  _(supports=14, disconfirms=1)_
 - **[calibration_observation]** Four consecutive Reflector dispatches (tick-31, tick-32, tick-33, tick-34) have ALL been bear-side trigger dispatches with ZERO probes fired, ZERO contested-signal tests of the +0.40 BUY floor, ZERO crosses of the +0.35 contest gate, and ZERO >=5% upside excursions across the las  _(supports=12, disconfirms=1)_
 - **[good_entry]** [regime=strong_bear, vol=normal] Disciplined probe-gate framework (audit-fix structural gate open + Pass 2.5 dual-gate + +0.40 BUY floor + probe MA-Opt +0.45 catalyst trigger + +0.20 second-leg consensus gate + TIGHTEN_STOP distribution-into-strength discipline) produced the fund  _(supports=10, disconfirms=0)_
