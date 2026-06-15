@@ -182,15 +182,28 @@ def holder_distribution(mint: str) -> dict:
     entry = cache.get(mint)
     if entry and (int(time.time()) - int(entry.get("ts", 0))) < _HOLDER_CACHE_TTL_SEC:
         return entry["data"]
-    data = _compute_holder_distribution(mint)
+    # Total supply of an established token is near-constant, so a STALE cache
+    # entry (TTL expired) still carries a usable total_supply. Pass it as a
+    # fallback so a getTokenSupply timeout — which has stranded the whole
+    # universe for 3+ ticks on the free tier — doesn't discard a good
+    # getTokenLargestAccounts read (review wf_f40d8759, 2026-06-15).
+    supply_fallback = 0.0
+    if entry and isinstance(entry.get("data"), dict):
+        supply_fallback = float(entry["data"].get("total_supply") or 0)
+    data = _compute_holder_distribution(mint, supply_fallback=supply_fallback)
     if isinstance(data, dict) and "top_10_pct" in data:  # cache successes only
         cache[mint] = {"ts": int(time.time()), "data": data}
         _store_holder_cache(cache)
     return data
 
 
-def _compute_holder_distribution(mint: str) -> dict:
-    """Top-10 holders + concentration. Falls back to DexScreener pool data if Helius fails."""
+def _compute_holder_distribution(mint: str, supply_fallback: float = 0.0) -> dict:
+    """Top-10 holders + concentration. Falls back to DexScreener pool data if Helius fails.
+
+    supply_fallback: a last-known total supply (e.g. from a stale holder-cache
+    entry) used only when the live getTokenSupply call times out but
+    getTokenLargestAccounts succeeded — so a free-tier supply outage doesn't
+    throw away an otherwise-good concentration read."""
     result = _rpc("getTokenLargestAccounts", [mint])
     if not result:
         # Fallback: ask DexScreener for the token's main pool — it shows fdv + supply
@@ -215,7 +228,16 @@ def _compute_holder_distribution(mint: str) -> dict:
     if total_top == 0: return {"error": "zero_amounts"}
     supply = _rpc("getTokenSupply", [mint])
     total_supply = float((supply.get("value") or {}).get("uiAmount") or 0) if supply else 0
-    if total_supply == 0: return {"error": "no_supply"}
+    supply_source = "live"
+    if total_supply == 0:
+        # Live supply failed (free-tier getTokenSupply timeout). Reuse a
+        # last-known supply if we have one rather than discarding the good
+        # largest-accounts read; concentration barely shifts for our universe.
+        if supply_fallback and supply_fallback > 0:
+            total_supply = supply_fallback
+            supply_source = "cache_fallback"
+        else:
+            return {"error": "no_supply"}
     top1_pct = (amounts[0] / total_supply) * 100 if amounts else 0
     top5_pct = (sum(amounts[:5]) / total_supply) * 100
     top10_pct = (sum(amounts[:10]) / total_supply) * 100
@@ -227,6 +249,7 @@ def _compute_holder_distribution(mint: str) -> dict:
         "concentrated": top1_pct > 25 or top10_pct > 60,
         "well_distributed": top10_pct < 40,
         "total_supply": total_supply,
+        "supply_source": supply_source,
     }
 
 

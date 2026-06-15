@@ -33,7 +33,7 @@ _FAILED = {"source": "dexscreener_fallback", "helius_status": "rpc_failed",
 
 def test_cache_miss_computes_and_stores(isolated_cache, monkeypatch):
     calls = {"n": 0}
-    def fake_compute(mint):
+    def fake_compute(mint, supply_fallback=0.0):
         calls["n"] += 1
         return dict(_GOOD)
     monkeypatch.setattr(onchain_stats, "_compute_holder_distribution", fake_compute)
@@ -45,7 +45,7 @@ def test_cache_miss_computes_and_stores(isolated_cache, monkeypatch):
 
 def test_cache_hit_skips_compute(isolated_cache, monkeypatch):
     calls = {"n": 0}
-    def fake_compute(mint):
+    def fake_compute(mint, supply_fallback=0.0):
         calls["n"] += 1
         return dict(_GOOD)
     monkeypatch.setattr(onchain_stats, "_compute_holder_distribution", fake_compute)
@@ -57,7 +57,7 @@ def test_cache_hit_skips_compute(isolated_cache, monkeypatch):
 def test_expired_cache_refetches(isolated_cache, monkeypatch):
     calls = {"n": 0}
     monkeypatch.setattr(onchain_stats, "_compute_holder_distribution",
-                        lambda m: (calls.__setitem__("n", calls["n"] + 1) or dict(_GOOD)))
+                        lambda m, supply_fallback=0.0: (calls.__setitem__("n", calls["n"] + 1) or dict(_GOOD)))
     onchain_stats.holder_distribution("MINT1")
     # Rewrite the cache entry with an old timestamp (older than TTL)
     data = json.loads(isolated_cache.read_text())
@@ -71,7 +71,7 @@ def test_failure_not_cached(isolated_cache, monkeypatch):
     """rpc_failed fallback must NOT be cached — retry next tick."""
     seq = [dict(_FAILED), dict(_GOOD)]
     monkeypatch.setattr(onchain_stats, "_compute_holder_distribution",
-                        lambda m: seq.pop(0))
+                        lambda m, supply_fallback=0.0: seq.pop(0))
     first = onchain_stats.holder_distribution("MINT1")
     assert first.get("helius_status") == "rpc_failed"
     # cache must be empty/without MINT1 → second call recomputes (gets _GOOD)
@@ -81,6 +81,6 @@ def test_failure_not_cached(isolated_cache, monkeypatch):
 
 def test_corrupt_cache_file_tolerated(isolated_cache, monkeypatch):
     isolated_cache.write_text("{ not valid json")
-    monkeypatch.setattr(onchain_stats, "_compute_holder_distribution", lambda m: dict(_GOOD))
+    monkeypatch.setattr(onchain_stats, "_compute_holder_distribution", lambda m, supply_fallback=0.0: dict(_GOOD))
     out = onchain_stats.holder_distribution("MINT1")
     assert out["top_10_pct"] == 50.4  # falls back to compute, no crash
