@@ -67,6 +67,23 @@ def _get_rpc_url() -> str:
 _RPC_URL_LOG_THROTTLE_SEC = 60 * 60  # 1h — don't spam the log on cold-config runs
 _last_rpc_url_log_ts = 0
 
+# Per-method circuit breaker (process-scoped). The Helius free tier sometimes
+# drops a SINGLE method into a 15s timeout (e.g. getTokenSupply, tick-138
+# 2026-06-15) while getHealth/getTokenLargestAccounts keep responding. Because
+# successes of other methods interleave, a global consecutive-failure breaker
+# never trips — so we track failures PER method. After N consecutive full
+# failures of a method in one process, skip further calls to THAT method
+# (return None immediately) instead of burning ~45s × every remaining symbol.
+# A success resets that method's counter. Each tick is a fresh process, so the
+# breaker re-probes Helius from scratch every tick.
+_BREAKER_THRESHOLD = 3
+_method_fail_counts: dict[str, int] = {}
+
+
+def _reset_circuit_breaker() -> None:
+    """Clear all per-method failure counters (test hook / fresh-process reset)."""
+    _method_fail_counts.clear()
+
 
 def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
     """Helius RPC with retry/backoff. Logs MEDIUM bug if all retries fail OR
@@ -88,6 +105,11 @@ def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
                       context={"method": method, "throttle_sec": _RPC_URL_LOG_THROTTLE_SEC})
             _last_rpc_url_log_ts = now
         return None
+    # Circuit breaker: this method already failed _BREAKER_THRESHOLD times in a
+    # row this process — Helius is degraded for it. Skip the network entirely so
+    # we don't burn ~45s (15s × 3 retries) on every remaining symbol.
+    if _method_fail_counts.get(method, 0) >= _BREAKER_THRESHOLD:
+        return None
     last_err = None
     for attempt in range(retries):
         try:
@@ -107,13 +129,20 @@ def _rpc(method: str, params: list, retries: int = 3) -> dict | None:
                     continue
                 last_err = err
                 break
+            _method_fail_counts[method] = 0  # success → reset this method's breaker
             return body.get("result")
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
             time.sleep(0.5 * (2 ** attempt))
+    # Full failure: count it; open the breaker for this method at the threshold.
+    _method_fail_counts[method] = _method_fail_counts.get(method, 0) + 1
+    opened = _method_fail_counts[method] == _BREAKER_THRESHOLD
     bugs.log("MEDIUM", "helius_rpc",
-              f"{method} failed after {retries} retries: {last_err}",
-              context={"method": method, "last_err": str(last_err)[:200]})
+              f"{method} failed after {retries} retries: {last_err}"
+              + (f" — circuit breaker OPEN for {method} (skipping remaining calls this process)" if opened else ""),
+              context={"method": method, "last_err": str(last_err)[:200],
+                       "consecutive_fails": _method_fail_counts[method],
+                       "breaker_open": opened})
     return None
 
 

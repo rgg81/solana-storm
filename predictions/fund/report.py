@@ -51,6 +51,23 @@ def _fmt_usd(x, decimals=2):
     return f"${x:,.{decimals}f}"
 
 
+def _headline_title(h) -> str:
+    """Normalize a `headlines_used` entry to its title string.
+
+    LLM-shaped: specialists may emit each headline as a dict
+    ({"source":.., "title":..}) per the role-file example, OR as a bare
+    string ("SOL ecosystem (generic)"). Tolerate both (and None / stray
+    types) so a single malformed entry never crashes the whole report.
+    """
+    if h is None:
+        return ""
+    if isinstance(h, dict):
+        return str(h.get("title", "") or "")
+    if isinstance(h, str):
+        return h
+    return str(h)
+
+
 def build_report() -> str:
     now = dt.datetime.utcnow()
     
@@ -309,8 +326,8 @@ def build_report() -> str:
                     n_h = len(headlines)
                     sample = ""
                     if headlines:
-                        h0 = headlines[0]
-                        sample = f'"{h0.get("title","")[:55]}"'
+                        title = _headline_title(headlines[0])
+                        sample = f'"{title[:55]}"' if title else ""
                     os_s = f"{os:+.2f}" if os is not None else "n/a"
                     ps_s = f"{ps:+.2f}" if ps is not None else "n/a"
                     ow = (opt_weighting.get(t, "")[:30])
