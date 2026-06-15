@@ -1,6 +1,6 @@
 ---
 version: 1
-last_updated: '2026-06-15T18:52:37Z'
+last_updated: '2026-06-15T19:11:42Z'
 total_ticks_recorded: 169
 total_closed_trades_audited: 4
 scoreboard:
@@ -59,7 +59,7 @@ disagreement_outcome:
     avg_return_pct: null
     win_rate: null
 validated_rules_count: 10
-candidate_rules_count: 13
+candidate_rules_count: 14
 disconfirmed_rules_count: 6
 per_symbol_specialist_accuracy:
   RENDER:
@@ -146,7 +146,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 ### Validated (promoted)
 
 - **[calibration_observation]** Across 4 ticks and all 38 rejection what-ifs (11 universe symbols x 6h/12h/18h/24h windows), zero positive price deltas occurred. The strong_bear regime BUY-floor of +0.35 has produced a 0/38 missed-winner rate at the >=5% materiality bar.  _(supports=121, disconfirms=2)_
-- **[good_rejection]** High-conviction MA-Pessimist (<=-0.50) on rejected symbols has been directionally aligned 8/8 with the subsequent move; 2/8 (VIRTUAL t3, TRUMP t4) crossed the >=5% materiality bar.  _(supports=109, disconfirms=1)_
+- **[good_rejection]** High-conviction MA-Pessimist (<=-0.50) on rejected symbols is a MODEST directional veto: full-population audit (n=147, +6 fwd) shows 56% fell / mean -2.27%, justified by favorable asymmetry (-7.0% when right vs +3.9% when wrong = +2.27%/event protective EV) — NOT the early "8/8"   _(supports=109, disconfirms=1)_
 - **[good_rejection]** In confirmed SOL strong_bear regime with the +0.05 regime BUY-floor adder active, REJECT decisions where MA-Optimist was >=+0.40 still produced >=5% down moves within 6-24h.  _(supports=47, disconfirms=2)_
 - **[good_rejection]** The Risk Manager's practice of pre-committing a specific quantitative override tripwire BEFORE a catalyst rally peak (tick-27/28 set 'SE-Pes >=+0.10 AND consensus >=+0.20 for RENDER') held discipline through the tick-13/14 peak across all 3 candidate names (RENDER, JUP, PYTH) and  _(supports=35, disconfirms=0)_
 - **[good_rejection]** The MA-Pes <=-0.50 HARD VETO anchor SET at the CURRENT tick (not just the prior-tick source) is empirically vindicated within the same 6h window as a forward-looking real-time defensive signal — JUP's current-tick MA-Pes -0.55 HARD VETO at t32 occurred in the same 6h window in wh  _(supports=18, disconfirms=0)_
@@ -171,6 +171,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 - **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] AGGREGATE-vs-PRIMARY-POOL LIQUIDITY HALF: the cand_59 liquidity half must be evaluated on the EXECUTABLE PRIMARY pool, not the aggregate routed book — a large aggregate liq ($34.9M) sitting on top of a thin primary pool (~$165k) is th  _(supports=6, disconfirms=0)_
 - **[good_rejection]** When a probe-path setup meets MA-Opt >=+0.45 catalyst trigger but consensus falls SHORT of the +0.20 second-leg gate by <=0.10 (knife-edge or wide-tight near-miss), the consensus axis tends to COLLAPSE within the next 6h (>=0.20 absolute drop) AND price tends to fall direction-al  _(supports=4, disconfirms=1)_
 - **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] DEEPENING-LAGS-CATALYST: on a thin-primary-pool catalyst name, the executable primary pool does NOT deepen DURING the catalyst -- it deepens only AFTER, once the catalyst is exhausting, and the depth that arrives is staged distributio  _(supports=3, disconfirms=0)_
+- **[calibration_observation]** [regime=strong_bear, vol=normal] MA-Pes <= -0.50 veto: confidence RE-SCOPE. The long-standing "reliable directional indicator (8/8)" label on cand_5 is a stale EARLY-WINDOW artifact (tick-2 watchlist names), NOT the population rate. Full forward-price audit (universe_price_histor  _(supports=1, disconfirms=0)_
 
 ### Disconfirmed (rejected anti-patterns)
 
