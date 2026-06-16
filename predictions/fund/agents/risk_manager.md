@@ -89,7 +89,7 @@ For each symbol with specialist_consensus ≥ +0.3 (BUY candidate), output:
 **Motivation.** The conservatism audit (commit history; 4-lens analysis 2026-06-01) found that in strong_bear the +0.40 effective floor is structurally unreachable (max consensus observed across the full run: ~+0.243). All "rule #3 validated" cases are sampled FROM the defensive streak itself — circular evidence. To break the loop without abandoning discipline, take ONE tightly-capped probe per regime cycle when the team is genuinely lifting toward the floor. The point is to generate **out-of-sample data**, not to chase return.
 
 **Probe is allowed when ALL of these hold:**
-1. Regime is `strong_bear` (the `calm_vol` prerequisite was dropped 2026-06-06 — SOL 30d daily vol has been ~2.91% throughout the regime the probe was designed for, and `calm` is `<2.5%` in `regime.py`, so the original gate was structurally closed for the entire 100-tick streak — see multi-agent review 2026-06-06)
+1. Regime is **defensive** — i.e. SOL `cur < SMA200`, which means `trend ∈ {strong_bear, bear}` (NOT the literal string `strong_bear` only). Decoupled from the literal label 2026-06-16 (desk-forensics wf_8321460b): the `+0.05` buy-floor adder fires identically for `bear` and `strong_bear` (the `strong` prefix is cosmetic for the floor), but the OLD literal-`strong_bear` requirement here meant the moment SOL reclaimed its SMA50 (flipping the label `strong_bear → bear`) the probe — the fund's ONLY data-generation escape hatch — would slam SHUT, freezing the desk *harder* during a recovery. That was backwards. The probe is the defensive-regime out-of-sample tool; it should stay available across the whole `cur < SMA200` defensive band. (The earlier `calm_vol` prerequisite was dropped 2026-06-06 — `calm` is `<2.5%` in `regime.py` and SOL 30d vol has been ~2.9-3.5% throughout, so that gate was structurally closed.)
 2. No open positions (probe is for cash-only state — never compounds with active risk)
 3. Symbol meets ALL: `consensus ≥ +0.20`, `ma_optimist ≥ +0.45`, no MA-Pes HARD VETO (`ma_pessimist > -0.50`), `onchain_consensus ≥ +0.00`, `combined_uncertainty < 0.55`, no validated reflection-rule HARD VETO
 4. No probe has fired in the prior 4 ticks (read `predictions/fund/state/probe_log.jsonl` for last fired probe's tick_id)
@@ -99,7 +99,7 @@ For each symbol with specialist_consensus ≥ +0.3 (BUY candidate), output:
 - `max_size_usd`: $125 (1.25% of $10k equity — 1/16th of normal max position)
 - `stop_loss_pct`: -0.08 (worst-case dollar loss ~$10)
 - `take_profit_pct`: +0.15
-- One probe per regime cycle (resets when regime changes from strong_bear OR after 4 ticks)
+- One probe per regime cycle (resets when SOL crosses back ABOVE SMA200 — i.e. exits the `cur < SMA200` defensive band into `bull`/`strong_bull` — OR after 4 ticks)
 
 **Probe output (if you take one):**
 - Add a `regime_probe` field at top level of your output JSON: `{ticker, consensus_at_entry, stop_loss_usd, tp_usd, max_size_usd:125, rationale:"out-of-sample test of strong_bear floor calibration per audit 2026-06-01"}`
