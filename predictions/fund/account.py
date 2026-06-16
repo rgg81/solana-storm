@@ -9,13 +9,17 @@ State files (gitignored):
 - predictions/fund/state/equity.jsonl    — daily equity snapshots
 """
 from __future__ import annotations
-import json, time, hashlib
+import json, time, hashlib, sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
 
 _STATE_DIR = Path(__file__).resolve().parent / "state"
 _STATE_DIR.mkdir(parents=True, exist_ok=True)
+# Frozen at import — the REAL production dir. Tests monkeypatch _STATE_DIR (and
+# the *_PATH constants) to tmp; this constant is never patched, so the
+# _atomic_write guard can tell a genuine production write from a redirected one.
+_PROD_STATE_DIR = Path(__file__).resolve().parent / "state"
 ACCOUNT_PATH = _STATE_DIR / "account.json"
 TRADES_PATH = _STATE_DIR / "trades.jsonl"
 EQUITY_PATH = _STATE_DIR / "equity.jsonl"
@@ -28,6 +32,17 @@ DUST_USD = 0.01
 
 
 def _atomic_write(path: Path, content: str) -> None:
+    # Safety net: never let a TEST write into the production state dir. The
+    # autouse conftest fixture redirects account paths to tmp_path; this guards
+    # a forgotten redirect (bug 2026-06-15: test fixtures leaked 40 rows into the
+    # live trades.jsonl, firing HIGH fee/slippage healthcheck mismatches). Raise
+    # loudly rather than silently skip, so the missing isolation is obvious.
+    if "pytest" in sys.modules and path.resolve().parent == _PROD_STATE_DIR:
+        raise RuntimeError(
+            f"Refusing to write '{path.name}' into the production state dir during a "
+            f"test. Use the autouse isolation fixture or monkeypatch the account path "
+            f"to tmp_path."
+        )
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(content)
     tmp.rename(path)

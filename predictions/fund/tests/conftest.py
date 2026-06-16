@@ -13,6 +13,28 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_account_state(tmp_path, monkeypatch):
+    """Redirect EVERY test's account write-paths to a tmp dir.
+
+    Bug (2026-06-15): account.py resolves TRADES_PATH/EQUITY_PATH/ACCOUNT_PATH/
+    TRIGGERS_LOG_PATH at import time from `Path(__file__).parent / "state"`, and
+    the opt-in `tmp_state_dir` fixture only set an env var account.py never reads.
+    So any test that called account.execute_trade() appended fixtures (e.g. the
+    `NEW @ $5` rows) to the PRODUCTION trades.jsonl, firing HIGH fee/slippage
+    healthcheck mismatches. This autouse fixture makes isolation automatic — a
+    forgotten redirect can no longer reach real state. Paired with a hard guard
+    in account._atomic_write that raises if a test writes to the real dir."""
+    from predictions.fund import account
+    state = tmp_path / "acct_state"
+    state.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(account, "ACCOUNT_PATH", state / "account.json", raising=False)
+    monkeypatch.setattr(account, "TRADES_PATH", state / "trades.jsonl", raising=False)
+    monkeypatch.setattr(account, "EQUITY_PATH", state / "equity.jsonl", raising=False)
+    monkeypatch.setattr(account, "TRIGGERS_LOG_PATH", state / "stop_triggers.jsonl", raising=False)
+    return state
+
+
 @pytest.fixture
 def tmp_state_dir(tmp_path, monkeypatch):
     """Redirect predictions.fund.STATE_DIR-style paths to an isolated tmp_path.
