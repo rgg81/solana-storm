@@ -63,6 +63,14 @@ ANOMALY_DELTA_PCT_THRESHOLD = ANOMALY_DELTA_PCT_POS_THRESHOLD
 # was never an entry candidate; subsequent downside is luck not validated discipline.
 GOOD_REJECTION_CONTEST_THRESHOLD = 0.35   # = floor (0.40 strong_bear) - 0.05
 
+# Reflection-symmetry (2026-06-16, desk-forensics wf_8321460b): a rejection that
+# ROSE is an *enterable* missed winner (a real opportunity cost the framework
+# should learn FROM) only if the team plausibly could have entered it — i.e. its
+# optimist_consensus reached the $125 probe bar (>= +0.30) somewhere in the
+# window. Below that bar the up-move is uncontested tape-beta (luck), a plain
+# missed_winner. This is the for-action counterpart to GOOD_REJECTION_CONTEST.
+PROBE_OPTIMIST_BAR = 0.30
+
 
 def _append_jsonl(path: Path, row: dict) -> None:
     existing = path.read_text() if path.exists() else ""
@@ -110,6 +118,13 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
             window_rows = [r for r in rows if prior["tick_id"] <= r.get("tick_id", 0) <= current_tick_id]
             cons_values = [float(r.get("consensus") or 0) for r in window_rows]
             max_consensus_in_window = max(cons_values) if cons_values else float(prior.get("consensus") or 0)
+            # Symmetric for-action gate: max optimist_consensus = (ma_opt+se_opt)/2
+            # reached in the window — the bar the $125 probe now uses. Computed
+            # from stored ma_optimist/se_optimist so it works on historical rows.
+            opt_values = [(float(r.get("ma_optimist") or 0) + float(r.get("se_optimist") or 0)) / 2
+                          for r in window_rows]
+            max_opt_cons_in_window = max(opt_values) if opt_values else \
+                (float(prior.get("ma_optimist") or 0) + float(prior.get("se_optimist") or 0)) / 2
             # Counterfactual P&L: if we had bought at the rejected size_pct (or a default 5%)
             sized_pct = prior.get("risk_mgr_max_size_pct") or 5.0
             # Assume $10k notional account, 5% size = $500
@@ -136,6 +151,7 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
                 "prior_rm_reason": prior.get("rm_reason"),
                 "prior_regime": prior.get("regime_label"),
                 "max_consensus_in_window": round(max_consensus_in_window, 3),
+                "max_optimist_consensus_in_window": round(max_opt_cons_in_window, 3),
             })
     return whatifs
 
@@ -177,15 +193,21 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         # a real entry candidate and avoiding it isn't a validated discipline win.
         max_cons = w.get("max_consensus_in_window", w.get("prior_consensus") or 0)
         contested = max_cons >= GOOD_REJECTION_CONTEST_THRESHOLD
+        # Symmetric for-action gate: did the rejection ever clear the probe bar?
+        # If so an up-move is an ENTERABLE miss (real opportunity cost), not luck.
+        max_opt = w.get("max_optimist_consensus_in_window", 0) or 0
+        enterable = max_opt >= PROBE_OPTIMIST_BAR
         if tag.startswith("REJECT") and ticks == 1:
             if delta >= TRIG_REJECT_6H_PCT:
-                triggers.append({**w, "trigger_kind": "missed_winner_6h"})
+                kind = "enterable_missed_winner_6h" if enterable else "missed_winner_6h"
+                triggers.append({**w, "trigger_kind": kind})
             elif delta <= -TRIG_REJECT_6H_PCT:
                 kind = "good_rejection_6h" if contested else "uncontested_rejection_down_6h"
                 triggers.append({**w, "trigger_kind": kind})
         elif tag.startswith("REJECT") and ticks == 4:
             if delta >= TRIG_REJECT_24H_PCT:
-                triggers.append({**w, "trigger_kind": "missed_winner_24h"})
+                kind = "enterable_missed_winner_24h" if enterable else "missed_winner_24h"
+                triggers.append({**w, "trigger_kind": kind})
             elif delta <= -TRIG_REJECT_24H_PCT:
                 kind = "good_rejection_24h" if contested else "uncontested_rejection_down_24h"
                 triggers.append({**w, "trigger_kind": kind})

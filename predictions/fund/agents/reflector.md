@@ -14,7 +14,8 @@ The team made decisions K ticks ago. Now we know what happened to those symbols.
 - `all_what_ifs` — every symbol × every prior tick still in scope. Use for pattern detection.
 - `prior_reflections_last_50` — what you've said before. **Do not restate.** Either confirm/disconfirm a prior pattern, or surface something new.
 - `trigger_kinds` — why you were dispatched. Trigger kinds include:
-  - `missed_winner_6h` / `missed_winner_24h` — a rejected symbol went UP materially
+  - `enterable_missed_winner_6h` / `enterable_missed_winner_24h` — a rejected symbol that **the team plausibly COULD have entered** (its `optimist_consensus` = (MA-Opt+SE-Opt)/2 reached the $125 probe bar ≥ +0.30 somewhere in the window) went UP materially. This is the **for-action counterpart to `good_rejection`**: a GENUINE opportunity cost, real evidence the gate may be leaving money on the table — NOT tape-beta luck. Treat it with the SAME weight you give a `good_rejection`: an enterable miss that recurs is as much a calibration signal FOR loosening as a good_rejection is FOR holding. Added 2026-06-16 (desk-forensics) to break the measurement asymmetry where the system could only ever accrue evidence AGAINST action.
+  - `missed_winner_6h` / `missed_winner_24h` — a rejected symbol went UP but **never cleared the probe bar** (max optimist_consensus < +0.30) — uncontested tape-beta, **luck not a takeable miss**. Do NOT count these as "the gate cost us money"; they are the up-side mirror of `uncontested_rejection_down`.
   - `good_rejection_6h` / `good_rejection_24h` — a CONTESTED rejection (max consensus in window ≥ +0.35, within floor-band) went DOWN — discipline validated
   - `uncontested_rejection_down_6h` / `uncontested_rejection_down_24h` — an UNCONTESTED rejection (max consensus stayed below +0.35 — the team never could have plausibly entered) went DOWN. This is **luck, not validated discipline.** Do NOT count these as "rejection paid off" in pattern claims. Surface them only to flag that the universe was structurally unenterable.
   - `premature_exit_6h` — a SELL was followed by continued upside
@@ -77,6 +78,8 @@ You may surface OTHER patterns. These three are the priors.
     "rejections_followed_by_up_move_5pct": <int>,
     "rejections_followed_by_down_move_5pct": <int>,
     "rejections_neutral": <int>,
+    "enterable_missed_winners": <int>,   // rejections that CLEARED the probe bar (opt_consensus >= +0.30) AND rose — genuine opportunity cost (for-action evidence; the counterpart to good_rejections)
+    "good_rejections_contested": <int>,  // contested rejections (max_consensus >= +0.35) that fell — discipline-validated (for-discipline evidence)
     "entries_followed_by_up_move_5pct": <int>,
     "entries_followed_by_down_move_5pct": <int>,
     "exits_followed_by_continued_up_5pct": <int>,
