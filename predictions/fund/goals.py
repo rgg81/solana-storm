@@ -71,6 +71,54 @@ def _rolling_runrate_pct(window_days: float) -> float | None:
     return round((window_return / span_days) * 30, 3)
 
 
+_HISTORY_PATH = Path(__file__).resolve().parent / "state" / "universe_price_history.jsonl"
+
+
+def _latest_regime_label() -> str | None:
+    """Latest regime_label from the price-history snapshot (offline, no network).
+    Returns None if unavailable."""
+    try:
+        if not _HISTORY_PATH.exists():
+            return None
+        for line in reversed(_HISTORY_PATH.read_text().splitlines()):
+            if not line.strip():
+                continue
+            lbl = json.loads(line).get("regime_label")
+            if lbl:
+                return lbl
+    except Exception:
+        return None
+    return None
+
+
+def _apply_regime_conditional_goal(status, posture, monthly_runrate_pct,
+                                   current_dd_pct, regime_label):
+    """Make the mandate regime-conditional (desk-forensics 2026-06-16).
+
+    Below SMA200 — `regime_label in {strong_bear, bear}` — the +5%/mo growth
+    target is structurally unreachable, and capital preservation is the honest
+    mandate: a flat-but-not-losing fund protecting capital through a downtrend is
+    SUCCEEDING, not "below_floor". Above SMA200 (risk-on) the growth target
+    applies unchanged. Returns (status, posture, effective_goal). Losing money or
+    drawing down hard in a bear still keeps the cautionary signal — preservation
+    means don't-lose, not don't-care."""
+    defensive = regime_label in ("strong_bear", "bear")
+    if not defensive:
+        return status, posture, "growth"
+    not_losing = monthly_runrate_pct is not None and monthly_runrate_pct >= 0
+    dd_ok = current_dd_pct is None or current_dd_pct > -10.0
+    if not_losing and dd_ok:
+        return (
+            "preservation_ok",
+            "defensive regime (SOL < SMA200): capital preservation is the mandate — "
+            "the +5%/mo growth target applies in risk-on regimes only. Deploy ONLY on "
+            "genuine bull-agreement probes; holding cash through a downtrend is success, "
+            "not failure. (Do not force trades to chase an unreachable growth number.)",
+            "capital_preservation",
+        )
+    return status, posture, "capital_preservation"
+
+
 def _consecutive_below_floor_ticks() -> int:
     """Count trailing ticks where the per-tick equity change kept the realized
     return below floor. Approximation: count trailing equity rows whose
@@ -155,7 +203,17 @@ def compute_status() -> dict:
     rolling_7d = _rolling_runrate_pct(window_days=7.0)
     consecutive_flat = _consecutive_below_floor_ticks()
 
+    # Regime-conditional mandate: below SMA200, the goal is capital preservation,
+    # not the +5%/mo growth target (unreachable while the macro anchor is in
+    # defense — desk-forensics 2026-06-16). Reframes a flat-but-not-losing fund
+    # away from a false "below_floor" failure signal.
+    regime_label = _latest_regime_label()
+    status, posture_recommendation, effective_goal = _apply_regime_conditional_goal(
+        status, posture_recommendation, monthly_runrate_pct, current_dd, regime_label)
+
     return {
+        "regime_label": regime_label,
+        "effective_goal": effective_goal,
         "monthly_target_pct": MONTHLY_RETURN_TARGET_PCT,
         "monthly_floor_pct": MONTHLY_RETURN_FLOOR_PCT,
         "monthly_stretch_pct": MONTHLY_RETURN_STRETCH_PCT,
@@ -184,9 +242,15 @@ def compute_status() -> dict:
 def format_for_agent_prompt() -> str:
     """Compact ~12-line block injected into every agent's prompt."""
     s = compute_status()
+    _eg = s.get("effective_goal", "growth")
+    _goal_line = (
+        f"  Target: +{s['monthly_target_pct']:.1f}% monthly (Floor +{s['monthly_floor_pct']:.1f}%, Stretch +{s['monthly_stretch_pct']:.1f}%)"
+        if _eg != "capital_preservation"
+        else f"  MANDATE NOW: CAPITAL PRESERVATION (regime {s.get('regime_label')} is below SMA200). The +{s['monthly_target_pct']:.1f}%/mo growth target applies in RISK-ON regimes only — do not force trades to chase it here; deploy only on genuine bull-agreement probes."
+    )
     lines = [
         "FUND GOAL (shared team objective):",
-        f"  Target: +{s['monthly_target_pct']:.1f}% monthly (Floor +{s['monthly_floor_pct']:.1f}%, Stretch +{s['monthly_stretch_pct']:.1f}%)",
+        _goal_line,
         f"  Max drawdown threshold: {s['max_drawdown_threshold_pct']:.0f}% (Risk Mgr halts beyond this)",
         f"  Target Sharpe: ≥{s['target_sharpe']:.1f}, Hit-rate ≥{s['target_hit_rate_pct']:.0f}%, Profit-factor ≥{s['target_profit_factor']:.1f}",
     ]
