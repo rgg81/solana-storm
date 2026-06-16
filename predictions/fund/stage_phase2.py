@@ -24,29 +24,65 @@ from predictions.fund.helpers import coingecko_top, indicators, onchain_stats
 HEADERS = {"User-Agent": "smaf/1.0"}
 
 
+# A real established token in our universe does not 10x in a day; a |chg| above
+# this is a wrong/bridged/mis-reported pool, not a signal. JUP surfaced a
+# +529,119% h24 from its deepest Solana pool for 2 consecutive ticks (tick-141/142).
+_MAX_PLAUSIBLE_CHG_PCT = 900.0
+
+
+def _chg_plausible(chg) -> bool:
+    try:
+        return abs(float(chg)) <= _MAX_PLAUSIBLE_CHG_PCT
+    except (TypeError, ValueError):
+        return False
+
+
+def _build_dex_from_pools(sol_pairs: list) -> dict | None:
+    """Build the per-symbol DEX dict from a token's Solana pairs.
+
+    Prefers the DEEPEST pool whose 24h price-change is PLAUSIBLE — this rejects a
+    wrong/bridged pool that reports impossible % moves (the JUP corruption). If
+    EVERY pool's change is implausible, fall back to the deepest pool (its
+    price/liquidity are still valid) but NULL the corrupt change fields and set
+    chg_corrupt=True so no downstream consumer reads false momentum."""
+    if not sol_pairs:
+        return None
+
+    def _liq(p):
+        return float((p.get("liquidity") or {}).get("usd") or 0)
+
+    plausible = [p for p in sol_pairs
+                 if _chg_plausible((p.get("priceChange") or {}).get("h24"))]
+    corrupt = not plausible
+    best = max(plausible or sol_pairs, key=_liq)
+    pc = best.get("priceChange") or {}
+    d = {
+        "price_usd": float(best.get("priceUsd") or 0),
+        "liq_usd": float((best.get("liquidity") or {}).get("usd") or 0),
+        "vol_h24": float((best.get("volume") or {}).get("h24") or 0),
+        "vol_h1": float((best.get("volume") or {}).get("h1") or 0),
+        "chg_h24": None if corrupt else float(pc.get("h24") or 0),
+        "chg_h6": None if corrupt else float(pc.get("h6") or 0),
+        "chg_h1": None if corrupt else float(pc.get("h1") or 0),
+        "buys_h24": int(((best.get("txns") or {}).get("h24") or {}).get("buys") or 0),
+        "sells_h24": int(((best.get("txns") or {}).get("h24") or {}).get("sells") or 0),
+        "dex": best.get("dexId"),
+        "pair_addr": best.get("pairAddress"),
+    }
+    if corrupt:
+        d["chg_corrupt"] = True
+    return d
+
+
 def fetch_dexscreener(mint: str) -> dict | None:
-    """Get top SOL pool for a mint address with full DEX signals."""
+    """Get the best SOL pool for a mint address with full DEX signals."""
     try:
         r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}",
                           headers=HEADERS, timeout=10)
         if r.status_code != 200: return None
         pairs = (r.json().get("pairs") or [])
         sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-        if not sol_pairs: return None
-        best = max(sol_pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
-        return {
-            "price_usd": float(best.get("priceUsd") or 0),
-            "liq_usd": float((best.get("liquidity") or {}).get("usd") or 0),
-            "vol_h24": float((best.get("volume") or {}).get("h24") or 0),
-            "vol_h1": float((best.get("volume") or {}).get("h1") or 0),
-            "chg_h24": float((best.get("priceChange") or {}).get("h24") or 0),
-            "chg_h6": float((best.get("priceChange") or {}).get("h6") or 0),
-            "chg_h1": float((best.get("priceChange") or {}).get("h1") or 0),
-            "buys_h24": int(((best.get("txns") or {}).get("h24") or {}).get("buys") or 0),
-            "sells_h24": int(((best.get("txns") or {}).get("h24") or {}).get("sells") or 0),
-            "dex": best.get("dexId"),
-            "pair_addr": best.get("pairAddress"),
-        }
+        return _build_dex_from_pools(sol_pairs)
     except Exception:
         return None
 
