@@ -68,6 +68,14 @@ def _get_score(out: dict, ticker: str) -> float:
     return float(v) if isinstance(v, (int, float)) else 0.0
 
 
+def _optimist_consensus(ma_optimist: float, se_optimist: float) -> float:
+    """Mean of the two OPTIMIST scores — the bulls' agreement, independent of the
+    pessimist drag. The Pass 2.5 probe gates on this instead of the 4-way mean so
+    a genuine bull case is not vetoed by averaging in two structurally-bearish
+    pessimists (desk-forensics root cause, 2026-06-16)."""
+    return round((ma_optimist + se_optimist) / 2, 4)
+
+
 class StaleSpecialistError(RuntimeError):
     """Raised when /tmp/smaf_*.json specialist outputs are older than the
     current tick's phase2 input — would mean a specialist dispatch failed and
@@ -136,6 +144,14 @@ def stage() -> dict:
 
         # 4-way mean. Pessimist scores are already signed (negative = bearish).
         consensus = round((ma_o + ma_p + se_o + se_p) / 4, 4)
+        # Optimist-pair mean: the BULLS' agreement, independent of the pessimist
+        # drag. The Pass 2.5 probe gates on this (>= +0.30) instead of the 4-way
+        # mean so two strong bulls can clear the bar even when two structurally
+        # bearish specialists would have dragged the blended mean under +0.20 —
+        # the dominant inaction root cause (desk-forensics wf_8321460b). The
+        # pessimist is retained as a separate HARD VETO (ma_pes > -0.50) + the
+        # combined_uncertainty cap; pessimists VETO, they no longer DILUTE.
+        optimist_consensus = _optimist_consensus(ma_o, se_o)
         market_disagreement = round(abs(ma_o - ma_p), 4)
         onchain_disagreement = round(abs(se_o - se_p), 4)
         combined_uncertainty = round(max(market_disagreement, onchain_disagreement), 4)
@@ -165,6 +181,7 @@ def stage() -> dict:
             "se_optimist_score": se_o,
             "se_pessimist_score": se_p,
             "consensus": consensus,
+            "optimist_consensus": optimist_consensus,
             "market_disagreement": market_disagreement,
             "onchain_disagreement": onchain_disagreement,
             "combined_uncertainty": combined_uncertainty,
@@ -216,8 +233,9 @@ if __name__ == "__main__":
     print(f"Triggers: {r['triggers']}")
     print(f"Equity: ${r['mtm']['equity_usd']:.2f}")
     print()
-    print("Top consensus (sorted):")
-    for t, d in sorted(r["per_sym"].items(), key=lambda x: x[1]["consensus"], reverse=True):
-        print(f"  {t:<8} cons={d['consensus']:+.3f} (Opt {d['ma_optimist_score']:+.2f} Pes {d['ma_pessimist_score']:+.2f} "
+    print("Top by optimist_consensus (the probe-gate signal; sorted):")
+    for t, d in sorted(r["per_sym"].items(), key=lambda x: x[1].get("optimist_consensus", 0), reverse=True):
+        print(f"  {t:<8} opt_cons={d.get('optimist_consensus', 0):+.3f} cons={d['consensus']:+.3f} "
+              f"(Opt {d['ma_optimist_score']:+.2f} Pes {d['ma_pessimist_score']:+.2f} "
               f"SE-O {d['se_optimist_score']:+.2f} SE-P {d['se_pessimist_score']:+.2f}) "
-              f"mkt-dis={d['market_disagreement']:.2f} onch-dis={d['onchain_disagreement']:.2f}")
+              f"comb-unc={d['combined_uncertainty']:.2f}")
