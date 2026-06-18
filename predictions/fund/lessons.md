@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-06-18T04:26:15Z'
-total_ticks_recorded: 181
+last_updated: '2026-06-18T10:48:18Z'
+total_ticks_recorded: 182
 total_closed_trades_audited: 4
 scoreboard:
   market_analyst_optimist:
@@ -158,7 +158,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 
 ### Candidate (awaiting promotion)
 
-- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=35, disconfirms=1)_
+- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=36, disconfirms=1)_
 - **[calibration_observation]** Across the 9 reflector dispatches since the audit fix (tick-19 through tick-27), the maximum consensus printed on any universe symbol on any tick has been +0.20 (JUP at the tick-35 source in user numbering). The realized consensus distribution in this calm-bear tape is structural  _(supports=33, disconfirms=1)_
 - **[calibration_observation]** When the cand_24_dc388268 periphery-rotation cycle (lift t23 -> persist -> unwind t28 -> bounce t29) enters a SECOND material leg-down (t31->t32 in this run) AND SOL PARTICIPATES in that leg-down for the first time (vs. staying flat on the prior 4 legs), the regime-axis has trans  _(supports=14, disconfirms=1)_
 - **[calibration_observation]** Four consecutive Reflector dispatches (tick-31, tick-32, tick-33, tick-34) have ALL been bear-side trigger dispatches with ZERO probes fired, ZERO contested-signal tests of the +0.40 BUY floor, ZERO crosses of the +0.35 contest gate, and ZERO >=5% upside excursions across the las  _(supports=12, disconfirms=1)_
@@ -169,7 +169,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 - **[good_entry]** [regime=strong_bear, vol=normal] Pass 2.5 probe entries (audit-fix-enabled path: MA-Opt >= +0.45 catalyst trigger, consensus >= +0.20 second-leg gate, combined_uncertainty <= 0.55, +0.40 strong_bear BUY floor cleared via probe path) pay off within 1-3 ticks when SOL is also print  _(supports=7, disconfirms=0)_
 - **[good_exit]** [regime=strong_bear, vol=normal] Distribution-into-strength signature on a vertical-print probe entry (h1 print materially smaller than h6 print AND buy-side flow skew below 55% on the same vertical day) correctly identified the moment to TIGHTEN_STOP rather than hold open the or  _(supports=7, disconfirms=0)_
 - **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] THE TWO-SIDED PROBE BAR. A tradeable probe candidate needs BOTH (a) a flow/catalyst half -- consensus >= +0.20 AND MA-Opt >= +0.45 -- AND (b) a liquidity half -- liq/mcap >= 0.5%. These are SEPARATE gates; a name strong on one half bu  _(supports=7, disconfirms=0)_
-- **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] DEEPENING-LAGS-CATALYST: on a thin-primary-pool catalyst name, the executable primary pool does NOT deepen DURING the catalyst -- it deepens only AFTER, once the catalyst is exhausting, and the depth that arrives is staged distributio  _(supports=6, disconfirms=0)_
+- **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] DEEPENING-LAGS-CATALYST: on a thin-primary-pool catalyst name, the executable primary pool does NOT deepen DURING the catalyst -- it deepens only AFTER, once the catalyst is exhausting, and the depth that arrives is staged distributio  _(supports=7, disconfirms=0)_
 - **[good_rejection]** When a probe-path setup meets MA-Opt >=+0.45 catalyst trigger but consensus falls SHORT of the +0.20 second-leg gate by <=0.10 (knife-edge or wide-tight near-miss), the consensus axis tends to COLLAPSE within the next 6h (>=0.20 absolute drop) AND price tends to fall direction-al  _(supports=4, disconfirms=1)_
 - **[calibration_observation]** [regime=strong_bear, vol=normal] MA-Pes <= -0.50 veto: confidence RE-SCOPE. The long-standing "reliable directional indicator (8/8)" label on cand_5 is a stale EARLY-WINDOW artifact (tick-2 watchlist names), NOT the population rate. Full forward-price audit (universe_price_histor  _(supports=1, disconfirms=0)_
 
