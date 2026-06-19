@@ -281,6 +281,23 @@ def main():
     except Exception as e:
         output["rss_news"] = {"error": str(e)[:80]}
     
+    out_path = REPO / "predictions" / "fund" / "state" / "tick_phase2_input.json"
+
+    def _write_output():
+        tmp = out_path.with_suffix(".tmp"); tmp.write_text(json.dumps(output, indent=2, default=str))
+        tmp.rename(out_path)
+
+    # Persist the core data (dex / holders / indicators / rss) BEFORE the sentiment
+    # step. FinBERT/torch can SEGFAULT (C-extension crash, exit 139) — a segfault is
+    # NOT a Python exception, so the try/except below cannot catch it and the process
+    # dies before any post-sentiment write. Writing first guarantees the staged file
+    # is always fresh even if sentiment crashes (the specialists treat sentiment as
+    # one optional input; stale dex data would be a correctness failure).
+    output["sentiment_anchors"] = {}
+    output["sentiment_anomalies"] = {}
+    output["sentiment_anchor_block"] = "SENTIMENT_ANCHOR: pending"
+    _write_output()
+
     # === Build sentiment anchors (VADER + FinBERT + source-weight + decay) ===
     try:
         from predictions.fund import sentiment_pipeline
@@ -288,14 +305,10 @@ def main():
         output["sentiment_anchors"] = anchors
         output["sentiment_anomalies"] = anomalies
         output["sentiment_anchor_block"] = sentiment_pipeline.format_for_agent_prompt(anchors, anomalies)
+        _write_output()  # re-write with the sentiment block added
     except Exception as e:
-        output["sentiment_anchors"] = {}
-        output["sentiment_anomalies"] = {}
         output["sentiment_anchor_block"] = f"SENTIMENT_ANCHOR: failed ({type(e).__name__}: {str(e)[:80]})"
-
-    out_path = REPO / "predictions" / "fund" / "state" / "tick_phase2_input.json"
-    tmp = out_path.with_suffix(".tmp"); tmp.write_text(json.dumps(output, indent=2, default=str))
-    tmp.rename(out_path)
+        _write_output()
     
     # Summary
     print()
