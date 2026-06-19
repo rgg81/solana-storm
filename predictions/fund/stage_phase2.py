@@ -37,6 +37,29 @@ def _chg_plausible(chg) -> bool:
         return False
 
 
+# A dexscreener pool whose price is wildly off the CoinGecko reference close is a
+# wrong/bridged/collision pool, not the real market. The _chg_plausible filter
+# above catches absurd CHANGE values but not absurd PRICES with a plausible change
+# (tick-152: JUP returned price $517.05 vs CG ~$0.19 — a ~2700x error — with a
+# "plausible" -44.75% h24 and 0 buys/56 sells). max_ratio=50 is far outside any
+# real cross-venue spread yet well inside genuine pool noise.
+_MAX_DEX_PRICE_RATIO = 50.0
+
+
+def _dex_price_sane(dex_price, ref_price, max_ratio: float = _MAX_DEX_PRICE_RATIO) -> bool:
+    """True unless dex_price deviates from ref_price by more than max_ratio (either
+    direction). Returns True when either price is missing/zero (no reference =
+    cannot judge = don't flag, to avoid false-positive corruption)."""
+    try:
+        d = float(dex_price); r = float(ref_price)
+    except (TypeError, ValueError):
+        return True
+    if d <= 0 or r <= 0:
+        return True
+    hi, lo = (d, r) if d >= r else (r, d)
+    return (hi / lo) <= max_ratio
+
+
 def _build_dex_from_pools(sol_pairs: list) -> dict | None:
     """Build the per-symbol DEX dict from a token's Solana pairs.
 
@@ -176,7 +199,16 @@ def main():
         # DexScreener live (only if mint known)
         if mint:
             dex = fetch_dexscreener(mint)
-            if dex: 
+            if dex and not _dex_price_sane(dex.get("price_usd"), per.get("latest_close_usd")):
+                # Wrong/bridged pool — price absurdly far from the CG reference close.
+                # Null it so specialists never score a phantom price (tick-152 JUP $517).
+                per["dexscreener_corrupt"] = {
+                    "reason": f"price {dex.get('price_usd')} vs CG ref {per.get('latest_close_usd')} "
+                              f"(>{int(_MAX_DEX_PRICE_RATIO)}x deviation — wrong/bridged pool)",
+                    "raw": dex,
+                }
+                dex = None
+            if dex:
                 per["dexscreener"] = dex
                 # Buy/sell skew derived
                 total_txns = dex["buys_h24"] + dex["sells_h24"]
