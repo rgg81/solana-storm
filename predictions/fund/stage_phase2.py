@@ -37,6 +37,21 @@ def _chg_plausible(chg) -> bool:
         return False
 
 
+def _pool_chg_plausible(pool: dict) -> bool:
+    """True unless ANY present price-change window (h1/h6/h24) is impossible.
+
+    A wrong/bridged pool can report a PLAUSIBLE h24 yet an absurd short-window move
+    (tick-155: JUP/PUMP corrupt pools had h24 ~+10% but h1 ~+491,000%). A MISSING
+    window is not evidence of corruption (don't flag it); only a PRESENT-and-absurd
+    value rejects the pool."""
+    pc = pool.get("priceChange") or {}
+    for window in ("h1", "h6", "h24"):
+        v = pc.get(window)
+        if v is not None and not _chg_plausible(v):
+            return False
+    return True
+
+
 # A dexscreener pool whose price is wildly off the CoinGecko reference close is a
 # wrong/bridged/collision pool, not the real market. The _chg_plausible filter
 # above catches absurd CHANGE values but not absurd PRICES with a plausible change
@@ -74,8 +89,7 @@ def _build_dex_from_pools(sol_pairs: list) -> dict | None:
     def _liq(p):
         return float((p.get("liquidity") or {}).get("usd") or 0)
 
-    plausible = [p for p in sol_pairs
-                 if _chg_plausible((p.get("priceChange") or {}).get("h24"))]
+    plausible = [p for p in sol_pairs if _pool_chg_plausible(p)]
     corrupt = not plausible
     best = max(plausible or sol_pairs, key=_liq)
     pc = best.get("priceChange") or {}
