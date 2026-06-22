@@ -75,21 +75,60 @@ def _dex_price_sane(dex_price, ref_price, max_ratio: float = _MAX_DEX_PRICE_RATI
     return (hi / lo) <= max_ratio
 
 
-def _build_dex_from_pools(sol_pairs: list) -> dict | None:
+def _last_prices_from_history(path: str) -> dict:
+    """{symbol: most-recent price_usd} from universe_price_history.jsonl.
+
+    The price-sanity reference (CG OHLC close) is absent whenever a token's daily
+    history fails to fetch (latest_close_usd=None) — exactly when a wrong/bridged
+    pool with a plausible chg slips through (tick-158: PYTH $188.77, JUP $1038.72).
+    The last persisted dexscreener price is ALWAYS available and is the robust
+    fallback reference. Later rows overwrite earlier ones, so the final value per
+    symbol is the most recent. Missing file / malformed / priceless rows are skipped."""
+    out: dict = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                sym = row.get("symbol")
+                px = row.get("price_usd")
+                if sym and isinstance(px, (int, float)):
+                    out[sym] = px
+    except FileNotFoundError:
+        return {}
+    return out
+
+
+def _build_dex_from_pools(sol_pairs: list, ref_price=None) -> dict | None:
     """Build the per-symbol DEX dict from a token's Solana pairs.
 
-    Prefers the DEEPEST pool whose 24h price-change is PLAUSIBLE — this rejects a
-    wrong/bridged pool that reports impossible % moves (the JUP corruption). If
-    EVERY pool's change is implausible, fall back to the deepest pool (its
-    price/liquidity are still valid) but NULL the corrupt change fields and set
-    chg_corrupt=True so no downstream consumer reads false momentum."""
+    Prefers the DEEPEST pool that is BOTH change-plausible AND (when a reference
+    price is known) price-sane — this rejects a wrong/bridged pool that reports
+    impossible % moves (the JUP +529,119% corruption) OR an absurd price with a
+    plausible change (tick-158 PYTH $188.77 / JUP $1038.72, where CG OHLC was
+    missing so the call-site guard had no reference). Passing ref_price here lets
+    the selector RECOVER the real pool instead of merely nulling the token. If
+    EVERY pool is implausible, fall back to the deepest pool but NULL the corrupt
+    change fields and set chg_corrupt=True so no downstream reads false momentum."""
     if not sol_pairs:
         return None
 
     def _liq(p):
         return float((p.get("liquidity") or {}).get("usd") or 0)
 
-    plausible = [p for p in sol_pairs if _pool_chg_plausible(p)]
+    def _ok(p):
+        if not _pool_chg_plausible(p):
+            return False
+        if ref_price and not _dex_price_sane(p.get("priceUsd"), ref_price):
+            return False
+        return True
+
+    plausible = [p for p in sol_pairs if _ok(p)]
     corrupt = not plausible
     best = max(plausible or sol_pairs, key=_liq)
     pc = best.get("priceChange") or {}
@@ -111,15 +150,18 @@ def _build_dex_from_pools(sol_pairs: list) -> dict | None:
     return d
 
 
-def fetch_dexscreener(mint: str) -> dict | None:
-    """Get the best SOL pool for a mint address with full DEX signals."""
+def fetch_dexscreener(mint: str, ref_price=None) -> dict | None:
+    """Get the best SOL pool for a mint address with full DEX signals.
+
+    ref_price (CG close or prior-tick price) lets the pool selector reject a
+    wrong/bridged price-outlier pool and recover the real one."""
     try:
         r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}",
                           headers=HEADERS, timeout=10)
         if r.status_code != 200: return None
         pairs = (r.json().get("pairs") or [])
         sol_pairs = [p for p in pairs if p.get("chainId") == "solana"]
-        return _build_dex_from_pools(sol_pairs)
+        return _build_dex_from_pools(sol_pairs, ref_price=ref_price)
     except Exception:
         return None
 
@@ -190,6 +232,10 @@ def main():
         "regime_notes": scout_out.get("reasoning", ""),
     }
     
+    # Prior-tick prices: robust _dex_price_sane reference when CG OHLC is unavailable.
+    _hist_path = str(REPO / "predictions" / "fund" / "state" / "universe_price_history.jsonl")
+    last_prices = _last_prices_from_history(_hist_path)
+
     for s in selected:
         ticker = s["ticker"]
         cg = cgid.get(ticker)
@@ -212,12 +258,15 @@ def main():
         
         # DexScreener live (only if mint known)
         if mint:
-            dex = fetch_dexscreener(mint)
-            if dex and not _dex_price_sane(dex.get("price_usd"), per.get("latest_close_usd")):
-                # Wrong/bridged pool — price absurdly far from the CG reference close.
+            # Price-sanity reference: CG OHLC close, else the prior-tick price (which is
+            # always available even when CG OHLC fails — tick-158 PYTH/JUP wrong pools).
+            price_ref = per.get("latest_close_usd") or last_prices.get(ticker)
+            dex = fetch_dexscreener(mint, ref_price=price_ref)
+            if dex and not _dex_price_sane(dex.get("price_usd"), price_ref):
+                # Wrong/bridged pool — price absurdly far from the reference.
                 # Null it so specialists never score a phantom price (tick-152 JUP $517).
                 per["dexscreener_corrupt"] = {
-                    "reason": f"price {dex.get('price_usd')} vs CG ref {per.get('latest_close_usd')} "
+                    "reason": f"price {dex.get('price_usd')} vs ref {price_ref} "
                               f"(>{int(_MAX_DEX_PRICE_RATIO)}x deviation — wrong/bridged pool)",
                     "raw": dex,
                 }
