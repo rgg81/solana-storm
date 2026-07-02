@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-07-02T08:03:29Z'
-total_ticks_recorded: 200
+last_updated: '2026-07-02T14:24:37Z'
+total_ticks_recorded: 201
 total_closed_trades_audited: 4
 scoreboard:
   market_analyst_optimist:
@@ -147,7 +147,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 
 - **[good_rejection]** High-conviction MA-Pessimist (<=-0.50) on rejected symbols is a MODEST directional veto: full-population audit (n=147, +6 fwd) shows 56% fell / mean -2.27%, justified by favorable asymmetry (-7.0% when right vs +3.9% when wrong = +2.27%/event protective EV) — NOT the early "8/8"   _(supports=148, disconfirms=2)_
 - **[calibration_observation]** Across 4 ticks and all 38 rejection what-ifs (11 universe symbols x 6h/12h/18h/24h windows), zero positive price deltas occurred. The strong_bear regime BUY-floor of +0.35 has produced a 0/38 missed-winner rate at the >=5% materiality bar.  _(supports=122, disconfirms=2)_
-- **[good_rejection]** The Risk Manager's practice of pre-committing a specific quantitative override tripwire BEFORE a catalyst rally peak (tick-27/28 set 'SE-Pes >=+0.10 AND consensus >=+0.20 for RENDER') held discipline through the tick-13/14 peak across all 3 candidate names (RENDER, JUP, PYTH) and  _(supports=57, disconfirms=0)_
+- **[good_rejection]** The Risk Manager's practice of pre-committing a specific quantitative override tripwire BEFORE a catalyst rally peak (tick-27/28 set 'SE-Pes >=+0.10 AND consensus >=+0.20 for RENDER') held discipline through the tick-13/14 peak across all 3 candidate names (RENDER, JUP, PYTH) and  _(supports=58, disconfirms=0)_
 - **[good_rejection]** In confirmed SOL strong_bear regime with the +0.05 regime BUY-floor adder active, REJECT decisions where MA-Optimist was >=+0.40 still produced >=5% down moves within 6-24h.  _(supports=47, disconfirms=2)_
 - **[good_rejection]** The MA-Pes <=-0.50 HARD VETO anchor SET at the CURRENT tick (not just the prior-tick source) is empirically vindicated within the same 6h window as a forward-looking real-time defensive signal — JUP's current-tick MA-Pes -0.55 HARD VETO at t32 occurred in the same 6h window in wh  _(supports=18, disconfirms=0)_
 - **[good_rejection]** When market_disagreement is HIGH (>=0.55) but on-chain disagreement is LOW (<=0.30) AND the two on-chain specialists AGREE on a negative direction, REJECT decisions in strong_bear regime have produced >=5% downside in 4/4 material observations within 18-24h windows.  _(supports=17, disconfirms=0)_
@@ -158,11 +158,11 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 
 ### Candidate (awaiting promotion)
 
-- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=53, disconfirms=1)_
+- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=54, disconfirms=1)_
 - **[calibration_observation]** Across the 9 reflector dispatches since the audit fix (tick-19 through tick-27), the maximum consensus printed on any universe symbol on any tick has been +0.20 (JUP at the tick-35 source in user numbering). The realized consensus distribution in this calm-bear tape is structural  _(supports=33, disconfirms=1)_
-- **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] THE TWO-SIDED PROBE BAR. A tradeable probe candidate needs BOTH (a) a flow/catalyst half -- consensus >= +0.20 AND MA-Opt >= +0.45 -- AND (b) a liquidity half -- liq/mcap >= 0.5%. These are SEPARATE gates; a name strong on one half bu  _(supports=21, disconfirms=0)_
+- **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] THE TWO-SIDED PROBE BAR. A tradeable probe candidate needs BOTH (a) a flow/catalyst half -- consensus >= +0.20 AND MA-Opt >= +0.45 -- AND (b) a liquidity half -- liq/mcap >= 0.5%. These are SEPARATE gates; a name strong on one half bu  _(supports=22, disconfirms=0)_
 - **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] AGGREGATE-vs-PRIMARY-POOL LIQUIDITY HALF: the cand_59 liquidity half must be evaluated on the EXECUTABLE PRIMARY pool, not the aggregate routed book — a large aggregate liq ($34.9M) sitting on top of a thin primary pool (~$165k) is th  _(supports=19, disconfirms=0)_
-- **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] DEEPENING-LAGS-CATALYST: on a thin-primary-pool catalyst name, the executable primary pool does NOT deepen DURING the catalyst -- it deepens only AFTER, once the catalyst is exhausting, and the depth that arrives is staged distributio  _(supports=16, disconfirms=0)_
+- **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] DEEPENING-LAGS-CATALYST: on a thin-primary-pool catalyst name, the executable primary pool does NOT deepen DURING the catalyst -- it deepens only AFTER, once the catalyst is exhausting, and the depth that arrives is staged distributio  _(supports=17, disconfirms=0)_
 - **[calibration_observation]** When the cand_24_dc388268 periphery-rotation cycle (lift t23 -> persist -> unwind t28 -> bounce t29) enters a SECOND material leg-down (t31->t32 in this run) AND SOL PARTICIPATES in that leg-down for the first time (vs. staying flat on the prior 4 legs), the regime-axis has trans  _(supports=14, disconfirms=1)_
 - **[calibration_observation]** Four consecutive Reflector dispatches (tick-31, tick-32, tick-33, tick-34) have ALL been bear-side trigger dispatches with ZERO probes fired, ZERO contested-signal tests of the +0.40 BUY floor, ZERO crosses of the +0.35 contest gate, and ZERO >=5% upside excursions across the las  _(supports=12, disconfirms=1)_
 - **[good_entry]** [regime=strong_bear, vol=normal] Disciplined probe-gate framework (audit-fix structural gate open + Pass 2.5 dual-gate + +0.40 BUY floor + probe MA-Opt +0.45 catalyst trigger + +0.20 second-leg consensus gate + TIGHTEN_STOP distribution-into-strength discipline) produced the fund  _(supports=10, disconfirms=0)_
