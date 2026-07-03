@@ -96,6 +96,15 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
     """For each row in history with tick_id < current and symbol present in current_prices,
     compute the price delta + counterfactual. Returns list of what-if rows."""
     history = uph.load_all()
+    # Currently-held tickers: their earlier rejections are superseded by the actual
+    # entry, so they must NOT be classified as missed_winners (tick-173 SPX bug).
+    try:
+        from predictions.fund import account as _acct
+        _state = _acct.load()
+        held_now = {t for t, h in (_state.get("holdings") or {}).items()
+                    if isinstance(h, dict) and float(h.get("units") or 0) > 1e-4}
+    except Exception:
+        held_now = set()
     by_sym: dict[str, list[dict]] = {}
     for r in history:
         if r.get("tick_id") == current_tick_id: continue  # this tick's own row, skip
@@ -152,6 +161,7 @@ def _build_what_ifs(current_tick_id: int, current_prices: dict[str, float]) -> l
                 "prior_regime": prior.get("regime_label"),
                 "max_consensus_in_window": round(max_consensus_in_window, 3),
                 "max_optimist_consensus_in_window": round(max_opt_cons_in_window, 3),
+                "symbol_currently_held": symbol in held_now,
             })
     return whatifs
 
@@ -197,6 +207,15 @@ def _classify_triggers(whatifs: list[dict]) -> list[dict]:
         # If so an up-move is an ENTERABLE miss (real opportunity cost), not luck.
         max_opt = w.get("max_optimist_consensus_in_window", 0) or 0
         enterable = max_opt >= PROBE_OPTIMIST_BAR
+        # A symbol the fund CURRENTLY HOLDS was NOT missed — its earlier rejection
+        # rows are superseded by the actual entry (tick-173: SPX was rejected at
+        # tick-169 then ENTERED as a $125 probe at tick-172; the window's peak
+        # optimist_consensus made the old rejection look enterable, mislabeling a
+        # good_entry as an enterable_missed_winner every held tick). Skip REJECT
+        # classification for held names; the position's own entry/exit what-ifs
+        # (BUY_EXECUTED/SELL_EXECUTED) carry the real outcome.
+        if tag.startswith("REJECT") and w.get("symbol_currently_held"):
+            continue
         if tag.startswith("REJECT") and ticks == 1:
             if delta >= TRIG_REJECT_6H_PCT:
                 kind = "enterable_missed_winner_6h" if enterable else "missed_winner_6h"
