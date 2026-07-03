@@ -28,6 +28,12 @@ HEADERS = {"User-Agent": "smaf/1.0"}
 # this is a wrong/bridged/mis-reported pool, not a signal. JUP surfaced a
 # +529,119% h24 from its deepest Solana pool for 2 consecutive ticks (tick-141/142).
 _MAX_PLAUSIBLE_CHG_PCT = 900.0
+# A near-total collapse (approaching -100%) in a SHORT window is corruption for our
+# established-token universe: no >$300M-mcap Solana token drops ~95%+ in <=6h, and
+# such a value is internally inconsistent with a mild h24 (tick-171: JTO phantom pool
+# chg_h6 -99.98% while chg_h24 -6.16%). The dexscreener -99.98 sentinel sits inside
+# the 900% band, so a dedicated short-window collapse floor is needed to reject it.
+_MAX_SHORT_WINDOW_COLLAPSE_PCT = 95.0
 
 
 def _chg_plausible(chg) -> bool:
@@ -37,17 +43,35 @@ def _chg_plausible(chg) -> bool:
         return False
 
 
+def _short_window_collapse(chg) -> bool:
+    """True when a short-window (h1/h6) change is a near-total collapse (|chg| >= 95%)."""
+    try:
+        return abs(float(chg)) >= _MAX_SHORT_WINDOW_COLLAPSE_PCT
+    except (TypeError, ValueError):
+        return False
+
+
 def _pool_chg_plausible(pool: dict) -> bool:
     """True unless ANY present price-change window (h1/h6/h24) is impossible.
 
-    A wrong/bridged pool can report a PLAUSIBLE h24 yet an absurd short-window move
-    (tick-155: JUP/PUMP corrupt pools had h24 ~+10% but h1 ~+491,000%). A MISSING
-    window is not evidence of corruption (don't flag it); only a PRESENT-and-absurd
-    value rejects the pool."""
+    Two corruption signatures are rejected:
+    1. Absurd magnitude in any window — |chg| > 900% (tick-155: JUP/PUMP corrupt pools
+       had h24 ~+10% but h1 ~+491,000%).
+    2. Near-total SHORT-window collapse — |h1| or |h6| >= 95% (tick-171: JTO phantom
+       Orca pool chg_h6 -99.98% while chg_h24 -6.16% and $817M wash volume). Such a
+       value passes the 900% band yet is physically impossible for an established
+       >$300M token and internally inconsistent with a mild h24.
+
+    A MISSING window is not evidence of corruption (don't flag it); only a
+    PRESENT-and-absurd value rejects the pool."""
     pc = pool.get("priceChange") or {}
     for window in ("h1", "h6", "h24"):
         v = pc.get(window)
         if v is not None and not _chg_plausible(v):
+            return False
+    for window in ("h1", "h6"):
+        v = pc.get(window)
+        if v is not None and _short_window_collapse(v):
             return False
     return True
 

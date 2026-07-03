@@ -1,7 +1,7 @@
 ---
 version: 1
-last_updated: '2026-07-02T21:58:42Z'
-total_ticks_recorded: 202
+last_updated: '2026-07-03T04:29:45Z'
+total_ticks_recorded: 203
 total_closed_trades_audited: 4
 scoreboard:
   market_analyst_optimist:
@@ -158,7 +158,7 @@ After ≥3 closed trades, each specialist will have a measurable hit rate.
 
 ### Candidate (awaiting promotion)
 
-- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=55, disconfirms=1)_
+- **[calibration_observation]** When 3+ universe names print uncontested 5-7% 6h upside on a single tick (max_consensus_in_window all <+0.35) AND the regime axis (SOL) does NOT participate, this is a periphery-rotation tape-beta event NOT a per-name calibration failure - the team had no plausible entry on any o  _(supports=56, disconfirms=1)_
 - **[calibration_observation]** Across the 9 reflector dispatches since the audit fix (tick-19 through tick-27), the maximum consensus printed on any universe symbol on any tick has been +0.20 (JUP at the tick-35 source in user numbering). The realized consensus distribution in this calm-bear tape is structural  _(supports=33, disconfirms=1)_
 - **[calibration_observation]** [regime=strong_bear, vol=normal, helius=live] THE TWO-SIDED PROBE BAR. A tradeable probe candidate needs BOTH (a) a flow/catalyst half -- consensus >= +0.20 AND MA-Opt >= +0.45 -- AND (b) a liquidity half -- liq/mcap >= 0.5%. These are SEPARATE gates; a name strong on one half bu  _(supports=22, disconfirms=0)_
 - **[good_rejection]** [regime=strong_bear, vol=normal, helius=live] AGGREGATE-vs-PRIMARY-POOL LIQUIDITY HALF: the cand_59 liquidity half must be evaluated on the EXECUTABLE PRIMARY pool, not the aggregate routed book — a large aggregate liq ($34.9M) sitting on top of a thin primary pool (~$165k) is th  _(supports=19, disconfirms=0)_
