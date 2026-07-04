@@ -85,6 +85,30 @@ def _pool_chg_plausible(pool: dict) -> bool:
 _MAX_DEX_PRICE_RATIO = 50.0
 
 
+# A pool whose 24h volume hugely exceeds its own liquidity is wash/phantom: a pool
+# cannot honestly turn over its entire book many times a day (real pools run <5x).
+# tick-174: JTO Orca phantom liq $1.75M / vol $334.9M = 191x, with a SANE price and
+# plausible changes, slipped both the price-sanity and change-plausibility guards and
+# was chosen as the deepest pool. This flags it. 15x is well above any real
+# established-token pool (observed max ~3.6x) yet far below wash levels (19x, 191x).
+_MAX_VOL_LIQ_RATIO = 15.0
+
+
+def _pool_vol_sane(pool: dict) -> bool:
+    """True unless vol_h24 exceeds _MAX_VOL_LIQ_RATIO x the pool's own liquidity.
+
+    A MISSING volume or liquidity is not evidence of corruption (don't flag it) —
+    only a PRESENT-and-absurd ratio rejects the pool."""
+    try:
+        liq = float((pool.get("liquidity") or {}).get("usd") or 0)
+        vol = float((pool.get("volume") or {}).get("h24") or 0)
+    except (TypeError, ValueError):
+        return True
+    if liq <= 0 or vol <= 0:
+        return True
+    return (vol / liq) <= _MAX_VOL_LIQ_RATIO
+
+
 def _dex_price_sane(dex_price, ref_price, max_ratio: float = _MAX_DEX_PRICE_RATIO) -> bool:
     """True unless dex_price deviates from ref_price by more than max_ratio (either
     direction). Returns True when either price is missing/zero (no reference =
@@ -147,6 +171,8 @@ def _build_dex_from_pools(sol_pairs: list, ref_price=None) -> dict | None:
 
     def _ok(p):
         if not _pool_chg_plausible(p):
+            return False
+        if not _pool_vol_sane(p):
             return False
         if ref_price and not _dex_price_sane(p.get("priceUsd"), ref_price):
             return False
