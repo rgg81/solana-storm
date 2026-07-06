@@ -233,6 +233,25 @@ KNOWN_MINTS = {
     "virtual-protocol":        "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",  # bridged
 }
 
+# Ticker-keyed mint overrides for universe names that CoinGecko's top-Solana list
+# does NOT return a cg_id for. Without a cg_id the cgid lookup (built only from the
+# top-Solana list) misses, `fetch_mint(None)` is skipped, and the symbol stages as
+# NO_DATA every tick (SPX chronic; FARTCOIN after it entered the universe tick-177).
+# These are verified real Solana Raydium pools (dexscreener) — NOT boosted-list decoys.
+TICKER_MINT_OVERRIDES = {
+    "SPX":      "J3NKxxXZcnNiMjKw9hYb2K4LUxgwB6t1FtPtQVsv3KFr",  # SPX6900 real ~$1.8M Raydium pool (NOT the SPCXwBHV... scam mint)
+    "FARTCOIN": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",  # real ~$6.8M Raydium pool
+}
+
+
+def resolve_mint(ticker: str, cg_id: str | None) -> str | None:
+    """Resolve a symbol's Solana mint. Ticker override wins (for names CG's
+    top-Solana list omits), else the cg_id path (KNOWN_MINTS then CG fallback)."""
+    if ticker in TICKER_MINT_OVERRIDES:
+        return TICKER_MINT_OVERRIDES[ticker]
+    return fetch_mint(cg_id) if cg_id else None
+
+
 def fetch_mint(cg_id: str) -> str | None:
     """Get a token's Solana mint address. Hardcoded for common ones; falls back to CG."""
     if cg_id in KNOWN_MINTS:
@@ -302,8 +321,9 @@ def main():
             else:
                 per["indicators"] = {"insufficient_data": True}
         
-        # Mint address (needed for DexScreener + Helius)
-        mint = fetch_mint(cg) if cg else None
+        # Mint address (needed for DexScreener + Helius). Ticker override handles
+        # universe names CoinGecko's top-Solana list omits (SPX, FARTCOIN).
+        mint = resolve_mint(ticker, cg)
         per["mint"] = mint
         
         # DexScreener live (only if mint known)
