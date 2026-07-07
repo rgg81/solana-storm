@@ -83,6 +83,44 @@ class StaleSpecialistError(RuntimeError):
     tests/test_stale_specialist_guard.py for the rationale."""
 
 
+class UniverseDataMismatchError(RuntimeError):
+    """Raised when the /tmp/smaf_universe.json selected-symbols set diverges from
+    the tick_phase2_input.json per_symbol set.
+
+    Bug (tick-182): the Scout re-wrote the universe file (BONK -> ANSEM) AFTER
+    stage_phase2 had already fetched BONK's data and the specialists had scored
+    BONK. stage_phase3 then read the later ANSEM universe: ANSEM had no scores so
+    it staged as an all-zero consensus row (a phantom neutral candidate that
+    misleads the RM), while BONK's real scores were silently dropped. The two
+    sets can only diverge if the universe file changed between Phase 2 and Phase 3
+    (a scout revision consumed mid-flight, or a partial re-run). Fail loudly so
+    the operator realigns /tmp/smaf_universe.json to the phase2 set (or re-runs
+    the scout->phase2 chain) before any decision consumes the corrupted matrix.
+    See tests/test_universe_phase2_consistency.py."""
+
+
+def _assert_universe_matches_scored(universe: dict, per_sym_p2: dict) -> None:
+    """The universe selected-symbols set MUST equal the phase2 per_symbol set.
+
+    Set-equality (order/duplicates ignored). A symbol in the universe but not in
+    per_symbol would stage all-zero scores; a symbol scored but not in the
+    universe would be dropped. Either way the consensus matrix is corrupt.
+    """
+    uni = {s["ticker"] for s in universe.get("selected_symbols", []) if s.get("ticker")}
+    scored = set(per_sym_p2.keys())
+    only_universe = uni - scored   # staged but no phase2 data → all-zero rows
+    only_phase2 = scored - uni     # scored but dropped from the staged matrix
+    if only_universe or only_phase2:
+        raise UniverseDataMismatchError(
+            "Universe selected-symbols set diverges from the phase2 per_symbol "
+            "set — the universe file was likely rewritten between Phase 2 and "
+            "Phase 3. Realign /tmp/smaf_universe.json to the phase2 set (or "
+            "re-run scout->stage_phase2) and re-run stage_phase3.\n"
+            f"  in universe but NOT scored (would stage all-zero rows): {sorted(only_universe)}\n"
+            f"  scored but NOT in universe (would be dropped): {sorted(only_phase2)}"
+        )
+
+
 def _assert_fresh(p2_path: Path) -> None:
     """Verify every /tmp/smaf_*.json mtime is newer than tick_phase2_input.json.
 
@@ -133,6 +171,10 @@ def stage() -> dict:
 
     p2 = json.load(open(p2_path))
     per_sym_p2 = p2.get("per_symbol", {})
+    # The universe file must not have changed between Phase 2 (which fetched
+    # per_symbol data and drove specialist scoring) and now — else we'd stage
+    # all-zero rows for unscored symbols and drop scored ones (tick-182 bug).
+    _assert_universe_matches_scored(universe, per_sym_p2)
     tickers = [s["ticker"] for s in universe.get("selected_symbols", [])]
 
     per_sym = {}
